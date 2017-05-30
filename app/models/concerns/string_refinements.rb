@@ -3,19 +3,19 @@
 module StringRefinements
   refine String do
     def met?
-      self == 'Met'
+      'Met' == self
     end
 
     def na?
-      self == 'N/A'
+      'N/A' == self
     end
 
     def unknown?
-      self == '?'
+      '?' == self
     end
 
     def unmet?
-      self == 'Unmet'
+      'Unmet' == self
     end
   end
 end

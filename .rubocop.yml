@@ -19,6 +19,16 @@ AllCops:
     - 'db/migrate/2016*.rb'
 Documentation:
   Enabled: false
+Layout/FirstArrayElementLineBreak:
+  Enabled: true
+Layout/FirstHashElementLineBreak:
+  Enabled: true
+Layout/FirstMethodArgumentLineBreak:
+  Enabled: true
+Layout/FirstMethodParameterLineBreak:
+  Enabled: true
+Layout/MultilineAssignmentLayout:
+  Enabled: true
 Lint/HandleExceptions:
   Exclude:
     - 'bin/*'
@@ -43,16 +53,6 @@ Style/AutoResourceCleanup:
 Style/CollectionMethods:
   Enabled: true
 Style/Encoding:
-  Enabled: true
-Style/FirstArrayElementLineBreak:
-  Enabled: true
-Style/FirstHashElementLineBreak:
-  Enabled: true
-Style/FirstMethodArgumentLineBreak:
-  Enabled: true
-Style/FirstMethodParameterLineBreak:
-  Enabled: true
-Style/MultilineAssignmentLayout:
   Enabled: true
 Style/NegatedIf:
   Enabled: true
