@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require 'test_helper'
 
 class PasswordResetsControllerTest < ActionController::TestCase
@@ -63,8 +64,8 @@ class PasswordResetsControllerTest < ActionController::TestCase
       id: user.reset_token,
       email: user.email,
       user: {
-        password:              'foo1234',
-        password_confirmation: 'foo1234'
+        password:              'foo1234!',
+        password_confirmation: 'foo1234!'
       }
     }
     assert user_logged_in?
@@ -73,6 +74,7 @@ class PasswordResetsControllerTest < ActionController::TestCase
   end
   # rubocop:enable Metrics/BlockLength
 
+  # rubocop:enable Metrics/BlockLength
   test 'expired token' do
     get :new
     post :create, params: { password_reset: { email: @user.email } }

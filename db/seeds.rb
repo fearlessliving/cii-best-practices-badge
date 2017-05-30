@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 # This file should contain all the record creation needed to seed the database
 # with its default values.
 # The data can then be loaded with the rake db:seed (or created alongside the db
@@ -20,8 +21,8 @@ User.create!(
 User.create!(
   name:  'Test User',
   email: 'test@example.org',
-  password:              'password',
-  password_confirmation: 'password',
+  password:              'p@$$word',
+  password_confirmation: 'p@$$word',
   provider: 'local',
   activated: true,
   activated_at: Time.zone.now
@@ -30,7 +31,7 @@ User.create!(
 100.times do |n|
   name  = Faker::Name.name
   email = "test-#{n + 1}@example.org"
-  password = 'password'
+  password = 'p@$$word'
   User.create!(
     name:  name,
     email: email,
@@ -55,7 +56,7 @@ user.projects.create!(
   repo_url:
                           'https://github.com/linuxfoundation/cii-best-practices-badge',
   license: 'MIT',
-  badge_percentage: 0,
+  badge_percentage_0: 0,
   homepage_url_status: '?',
   sites_https_status: '?',
   description_good_status: '?',
@@ -144,7 +145,7 @@ ProjectStat.create!
     homepage_url: homepage_url,
     repo_url: repo_url,
     license: license,
-    badge_percentage: 0,
+    badge_percentage_0: 0,
     homepage_url_status: '?',
     sites_https_status: '?',
     description_good_status: '?',

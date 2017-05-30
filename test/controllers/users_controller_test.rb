@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require 'test_helper'
 
 class UsersControllerTest < ActionController::TestCase
@@ -59,6 +60,15 @@ class UsersControllerTest < ActionController::TestCase
     assert_equal @user.name, new_name
   end
 
+  test 'should be able to change locale' do
+    log_in_as(@user)
+    patch :update, params: { id: @user, user: { preferred_locale: 'fr' } }
+    assert_not_empty flash # Success message
+    @user.reload
+    assert_equal 'fr', @user.preferred_locale
+    assert_redirected_to users_path(locale: 'fr') + "/#{@user.id}"
+  end
+
   test 'should redirect destroy when not logged in' do
     assert_no_difference 'User.count' do
       delete :destroy, params: { id: @user }
@@ -78,6 +88,14 @@ class UsersControllerTest < ActionController::TestCase
     log_in_as(@admin)
     assert_difference('User.count', -1) do
       delete :destroy, params: { id: @other_user }
+    end
+    assert_not_empty flash
+  end
+
+  test 'should not be able to destroy self' do
+    log_in_as(@admin)
+    assert_no_difference 'User.count' do
+      delete :destroy, params: { id: @admin }
     end
     assert_not_empty flash
   end

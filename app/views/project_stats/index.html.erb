@@ -1,8 +1,21 @@
+<%= javascript_include_tag 'project-stats', defer: true%>
+
+<%
+  # Force deletion of the obsolete cached information, if it exists.
+  # It will age out eventually anyway, but this is a large cache entry
+  # and we can easily determine what the previous one was. Immediately
+  # forcing its deletion provides more cache space for other (useful) things.
+  Rails.cache.delete ActiveSupport::Cache.expand_cache_key(
+    ['project_stats', locale, ProjectStat.all.size-1]
+  )
+  cache ['project_stats', locale, ProjectStat.all.size] do
+%>
+
 <p id="notice"><%= notice %></p>
 
-<h1>Project Stats</h1>
+<h1><%= t('.project_stats_header') %></h1>
 
-<h2>All projects</h2>
+<h2><%= t '.all_projects' %></h2>
 
 <%
   date_chart_options = {
@@ -25,12 +38,12 @@
   series_dataset = ProjectStat.all.reduce({}) do |h,e|
     h.merge(e.created_at => e.percent_ge_0)
   end
-  line_chart series_dataset, library: date_chart_options
+  line_chart series_dataset, library: date_chart_options, defer: true
 %>
 
 <br><br><br>
 
-<h2>Projects with non-trivial progress</h2>
+<h2><%= t '.projects_nontrivial' %></h2>
 <%=
   # Show project counts, but skip <25% because that makes chart scale unusable
   gt0_stats = ProjectStat::STAT_VALUES.select do |e|
@@ -44,45 +57,45 @@
     {name: '>=' + minimum.to_s + '%', data: series_dataset}
   end
   # Done transforming data; display it.
-  line_chart dataset, library: date_chart_options
+  line_chart dataset, library: date_chart_options, defer: true
 %>
 
 <br><br><br>
 
-<h2>Projects with badge entry activity in last 30 days</h2>
+<h2><%= t '.projects_activity_30' %></h2>
 <%=
   dataset = []
   # Active projects
   active_dataset = ProjectStat.all.reduce({}) do |h,e|
     h.merge(e.created_at => e.active_projects)
   end
-  dataset << {name: 'Active projects (created/updated within 30 days)',
+  dataset << {name: t('.active_projects'),
               data: active_dataset}
   # Active in-progress projects
   active_in_progress_dataset = ProjectStat.all.reduce({}) do |h,e|
     h.merge(e.created_at => e.active_in_progress)
   end
-  dataset << {name: 'Active in-progress projects (created/updated within 30 days)',
+  dataset << {name: t('.active_in_progress'),
               data: active_in_progress_dataset}
   # Active edited projects
   active_edited_dataset = ProjectStat.all.reduce({}) do |h,e|
     h.merge(e.created_at => e.active_edited_projects)
   end
-  dataset << {name: 'Active edited projects (updated within 30 days)',
+  dataset << {name: t('.active_edited'),
               data: active_edited_dataset}
   # Active edited in-progress projects
   active_edited_in_progress_dataset = ProjectStat.all.reduce({}) do |h,e|
     h.merge(e.created_at => e.active_edited_in_progress)
   end
-  dataset << {name: 'Active edited in-progress projects (updated within 30 days)',
+  dataset << {name: t('.active_edited_in_progress'),
               data: active_edited_in_progress_dataset}
   # Done transforming data; display it.
-  line_chart dataset, library: date_chart_options
+  line_chart dataset, library: date_chart_options, defer: true
 %>
 
 <br><br><br>
 
-<h2>Daily badge entry activity</h2>
+<h2><%= t '.daily_activity' %></h2>
 <%=
   # Show new and edited projects, reminders sent, reactivated after reminders
   # These are expected to be smaller numbers, and show detailed activity,
@@ -95,7 +108,7 @@
     series_dataset = ProjectStat.all.reduce({}) do |h,e|
       h.merge(e.created_at => e[desired_field])
     end
-    dataset << {name: 'projects ' + action + ' since day before',
+    dataset << {name: t(".projects_#{action}_since_yesterday"),
                 data: series_dataset}
     # Calculate moving average over ndays
     series_counts = ProjectStat.all.map { |e| e[desired_field] }
@@ -109,18 +122,18 @@
           series_moving_average[index-ndays]
       end
     end
-    dataset << {name: 'projects ' + action + " average over #{ndays} days",
+    dataset << {name: t(".projects_#{action}_average_7_days"),
                 data: moving_average_dataset,
                 library: {borderDash: [5,5]}}
   end
   line_chart dataset, colors: ['green', 'darkgreen', 'blue', 'darkblue',
                                'red', 'purple'],
-    library: date_chart_options
+    library: date_chart_options, defer: true
 %>
 
 <br><br><br>
 
-<h2>Reminders</h2>
+<h2><%= t '.reminders' %></h2>
 <%=
   # Show reminders sent, reactivated after reminders
   dataset = []
@@ -128,101 +141,31 @@
   reminders_dataset = ProjectStat.all.reduce({}) do |h,e|
     h.merge(e.created_at => e.reminders_sent)
   end
-  dataset << {name: 'Reminders sent since yesterday',
+  dataset << {name: t('.reminders_sent_since_yesterday'),
               data: reminders_dataset}
   # Reactivated after reminders
   reactivated_dataset = ProjectStat.all.reduce({}) do |h,e|
     h.merge(e.created_at => e.reactivated_after_reminder)
   end
   dataset <<
-    {name: 'Reactivated projects in 14 days after receiving reminder',
+    {name: t('.reactivated_projects'),
      data: reactivated_dataset}
   line_chart dataset, colors: ['green', 'blue'],
-    library: date_chart_options
+    library: date_chart_options, defer: true
 %>
 
-<% if current_user&.admin? %>
-<br><br><br>
-
-<h2>Upcoming inactive reminders</h2>
-
-<p>
-As an admin, you may also see the
-next projects scheduled for inactive reminders:
-
-<table class='table-bordered table-striped'>
-  <thead>
-    <tr>
-      <th>id</th>
-      <th>Name</th>
-      <th>Updated at</th>
-      <th>Last reminder at</th>
-      <th>%</th>
-      <th>Email</th>
-    </tr>
-  </thead>
-
-  <tbody>
-    <% Project.projects_to_remind.each do |project| %>
-      <tr>
-        <td><a href="/projects/<%= project.id %>"><%= project.id %></a></td>
-        <td><%= project.name %></td>
-        <td><%= project.updated_at %></td>
-        <td><%= project.last_reminder_at %></td>
-        <td><%= project.badge_percentage %>%</td>
-        <td><%= project.user_email %></td>
-      </tr>
-    <% end %>
-  </tbody>
-</table>
+<%# End cache *before* showing any admin-specific data %>
 <% end %>
 
-<br><br>
-<h2>Raw data</h2>
-<a class="btn btn-primary" role="button" data-toggle="collapse" href="#raw-project-data" aria-expanded="false" aria-controls="collapseExample">
-Show raw project data
-</a>
-<div class="collapse" id="raw-project-data">
-  <div class="well">
+<% if current_user&.admin? %>
 <p>
-
-<table class='table-bordered table-striped'>
-  <thead>
-    <tr>
-      <th>When</th>
-      <th>All</th>
-      <th>&gt;= 25%</th>
-      <th>&gt;= 50%</th>
-      <th>&gt;= 75%</th>
-      <th>&gt;= 90%</th>
-      <th>&gt;= 100%</th>
-      <th>New in the last day</th>
-      <th>Updated in the last day</th>
-      <th colspan="3"></th>
-    </tr>
-  </thead>
-
-  <tbody>
-    <% @project_stats.each do |project_stat| %>
-      <tr>
-        <td><%= project_stat.created_at %></td>
-        <td><%= project_stat.percent_ge_0 %></td>
-        <td><%= project_stat.percent_ge_25 %></td>
-        <td><%= project_stat.percent_ge_50 %></td>
-        <td><%= project_stat.percent_ge_75 %></td>
-        <td><%= project_stat.percent_ge_90 %></td>
-        <td><%= project_stat.percent_ge_100 %></td>
-        <td><%= project_stat.created_since_yesterday %></td>
-        <td><%= project_stat.updated_since_yesterday %></td>
-        <td><%= link_to 'Show', project_stat %></td>
-      </tr>
-    <% end %>
-  </tbody>
-</table>
-<br>
-  </div>
-</div>
+<%= t '.admin_html' %>
+<% end %>
 
 <br>
 <br>
-<a href="/project_stats.json">You can also get the raw data in JSON format</a>.
+<%= t '.raw_data' %>
+<ul>
+<li><%= link_to t('.json_format'), project_stats_path(format: :json) %>
+<li><%= link_to t('.csv_format'), project_stats_path(format: :csv) %>.
+</ul>

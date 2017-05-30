@@ -76,7 +76,7 @@ Another way to do this is to write the following at the end of the commit
 message, on a line by itself separated by a blank line from the body of
 the commit:
 
-    Signed-off-by: YOUR NAME &lt;YOUR.EMAIL@EXAMPLE.COM&gt;
+    Signed-off-by: YOUR NAME <YOUR.EMAIL@EXAMPLE.COM>
 
 You can signoff by default in this project by creating a file
 (say "git-template") that contains
@@ -132,10 +132,16 @@ please send an email to the security contacts that you have such
 information, and we'll tell you the next steps.
 For now, the security contacts are:
 David A. Wheeler <dwheeler-NOSPAM@ida.org>,
+Jason Dossett <jdossett-NOSPAM@ida.org>,
 Dan Kohn <dankohn-NOSPAM@linux.com>,
-Emily Ratliff <eratliff-NOSPAM@linuxfoundation.org>,
-and Sam Khakimov <skhakimo-NOSPAM@ida.org>
+and
+Marcus Streets <mstreets-NOSPAM@linuxfoundation.org>
 (remove the -NOSPAM markers).
+
+We will gladly give credit to anyone who reports a vulnerability
+so that we can fix it.
+If you want to remain anonymous or pseudonymous instead,
+please let us know that; we will gladly respect your wishes.
 
 ## Documentation changes
 
@@ -205,7 +211,8 @@ Please generally follow the
 [community Ruby style guide](https://github.com/bbatsov/ruby-style-guide)
 and the complementary
 [community Rails style guide](https://github.com/bbatsov/rails-style-guide).
-We don't follow them slavishly, but we do generally try to follow them.
+Our continous integration setups runs Rubocop on each commit to ensure they're
+being followed.
 For example, in Ruby:
 
 * [use two-space indents](https://github.com/bbatsov/ruby-style-guide#spaces-indentation)
@@ -221,19 +228,23 @@ Symbols are typically faster, with no loss of readability.
 There is one big exception:
 Data from JSON should normally be accessed with strings,
 since that's how Ruby normally reads it.
-Rails normally uses the type HashWithIndifferentAccess,
+Rails normally uses the type ActiveSupport::HashWithIndifferentAccess,
 where the difference between symbols and strings is ignored,
 but JSON results use standard Ruby hashes where symbols and strings are
 considered different; be careful to use the correct type in these cases.
 
-Our goal is for the application to be thread-safe, so please
-follow the guidelines in
+We have designed the application to be thread-safe (Rails is itself
+thread-safe, including its caching mechanism).
+Please follow the guidelines in
 [How Do I Know Whether My Rails App Is Thread-safe or Not?](https://bearmetal.eu/theden/how-do-i-know-whether-my-rails-app-is-thread-safe-or-not/);
 see also
 [How to test multithreaded code](http://www.mikeperham.com/2015/12/14/how-to-test-multithreaded-code/).
-It's challenging to be certain an application is thread-safe,
-so we aren't currently running it with multiple threads,
-but we intend for it to be thread-safe and use that in the future.
+In short: Each concurrent request runs in its own thread.
+Threads typically create objects within their own thread; they may also
+read shared objects with impunity.
+However, be extremely cautious about *changing* shared objects.
+You should normally only change shared objects through mechanisms
+designed for the purpose (e.g., the database or internal Rails cache).
 
 In Ruby please prefer the String operations that do not have side-effects
 (e.g., "+", "sub", or "gsub"), and consider freezing strings.
@@ -244,7 +255,7 @@ There are current plans that
 [Ruby 3's string literals will be immutable](https://twitter.com/yukihiro_matz/status/634386185507311616).
 See [issue 11473](https://bugs.ruby-lang.org/issues/11473) for more.
 Even if this doesn't happen, freezing string literals is both faster and
-reduces the risk of accidentally modifying a string.
+reduces the risk of accidentally modifying a shared string.
 Use "dup" on a string literal to produce a mutable string;
 since "dup" is already permitted in the language,
 this provides a simple backwards-compatible way for us to indicate
@@ -273,6 +284,13 @@ test class, please use callbacks instead of overwrites; i.e.  use "setup do"
 instead of "def setup."  This preserves any changes to those methods that
 may have been made in test_helper.rb.
 
+*Never* include user email addresses in the internal Rails cache.
+Caches are stored for reuse later, and there's always the risk that
+they will accidentally presented to another user not authorized to see it.
+Otherwise, please *do* use caches to speed repeated responses where they
+make sense.  Caches are one of the key mechanisms we use to provide
+rapid responses to users.
+
 ### JavaScript
 
 There is a small amount of application-specific client-side JavaScript;
@@ -298,7 +316,7 @@ If you edit the JavaScript, beware of ready events.
 Rails' turbolinks gem claims that it
 ["works great with the jQuery framework"](https://github.com/rails/turbolinks),
 but this is misleading.
-[Turbolinks breaks <tt>"$(document).ready"</tt>](http://guides.rubyonrails.org/working_with_javascript_in_rails.html#page-change-events)
+[Turbolinks breaks $(document).ready](http://guides.rubyonrails.org/working_with_javascript_in_rails.html#page-change-events)
 (an extremely common construct)
 and by default requires you to use a nonstandard on..."page:change".
 To solve this botch in turbolinks we use
@@ -332,10 +350,51 @@ However, each git commit should have both
 the test and improvement in the *same* commit,
 because 'git bisect' will then work well.
 
-*WARNING*: Currently some tests intermittently fail, even though
-the software works fine.  There may more than one cause of this.
-For now, if tests fail, restart to see if it's a problem with the software
+*WARNING*: It is possible that some tests may intermittently fail, even though
+the software works fine.
+If tests fail, restart to see if it's a problem with the software
 or the tests.  On CircleCI you can choose to rebuild.
+Where possible, try to find and fix the problem; we have worked to
+eliminate this, and at this point believe we have fixed it.
+
+If you use an old version of PhantomJS (e.g., if you use
+Ubuntu 14.04 and install PhantomJS via apt-get), you'll see this
+message during tests:
+
+> You're running an old version of PhantomJS,
+> update to >= 2.1.1 for a better experience.
+
+You can eliminate the warnings about old versions of PhantomJS
+by uninstalling the old version and installing a
+[current version of PhantomJS](http://phantomjs.org/download.html).
+
+### Security, privacy, and performance
+
+Pay attention to security, and work *with* (not against) our
+security hardening mechanisms.  In particular, put JavaScript and CSS
+in *separate* files - this makes it possible to have very strong
+Content Security Policy (CSP) rules, which in turn greatly reduces
+the impact of a software defect.  Be sure to use prepared statements
+(including via Rails' ActiveRecord).
+Protect private information, in particular passwords and email addresses.
+Avoid mechanisms that could be used for tracking where possible
+(we do need to verify people are logged in for some operations),
+and ensure that third parties can't use interactions for tracking.
+For more about security, see [security](doc/security.md).
+
+We want the software to have decent performance for typical users.
+[Our goal is interaction in 1 second or less after making a request](https://developers.google.com/web/fundamentals/performance/rail).
+Don't send megabytes of data for a request
+(see
+[The Website Obesity Crisis](http://idlewords.com/talks/website_obesity.htm)).
+Use caching (at the server, CDN, and user side) to improve performance
+in typical cases (while avoiding making the code too complicated).
+Moving all the JavaScripts to a long-lived cached page, for example,
+means that the user only needs to load that page once.
+See the "other tools" list below for some tools to help measure performance.
+There's always a trade-off between various attributes, in particular,
+don't make performance so fast that the software is hard to maintain.
+Instead, work to get "reasonable" performance in typical cases.
 
 ## How to check proposed changes before submitting them
 
@@ -346,39 +405,55 @@ In some cases it's okay to fix them by disabling the warning in that particular
 place, but be careful; it's often better to make a real change,
 even if it doesn't matter in that particular case.
 
+### Standard checks
+
 The specific list of tools run by default using 'rake' is listed in
 [default.rake](lib/tasks/default.rake).
 Currently these include at least the following rake tasks that
 check the software:
 
-1. *bundle* - use bundle to check dependencies
-   ("bundle check || bundle install")
-2. *bundle_audit* - check for transitive gem dependencies with
-   known vulnerabilities
-3. *rubocop* - runs Rubocop, which checks Ruby code style against the
-   [community Ruby style guide](https://github.com/bbatsov/ruby-style-guide)
-4. *markdownlint* - runs markdownlint, also known as mdl
-   (this checks for errors in the markdown text)
-5. *rails_best_practices* - check Ruby against rails best practices
-   using the gem
-   [rails_best_practices](http://rails-bestpractices.com/)
-6. *brakeman* - runs Brakeman, which is a static source code analyzer
-   to look for Ruby on Rails security vulnerabilities
-7. *license_okay* - runs license_finder to check the
-   OSS licenses of gem dependencies (transitively).
-   A separate dependency on file 'license_finder_report.html' generates
-   a detailed license report in HTML format.
-8. *whitespace_check* - runs "git diff --check" to detect
-   trailing whitespace in latest diff
-9. *yaml_syntax_check* - checks syntax of YAML (.yml) files.
-   Note that the automated test suite includes a number of specific
-   checks on the criteria.yml file.
-10. *fasterer* - report on Ruby constructs with poor performance
-11. *eslint* - Perform code style check on JavaScript using eslint
-12. *test* - run the automated test suite
+*   *bundle* - use bundle to check dependencies
+    ("bundle check || bundle install")
+*   *bundle_doctor* - sanity check on Ruby gem configuration/installation
+*   *bundle_audit* - check for transitive gem dependencies with
+    known vulnerabilities
+*   *rubocop* - runs Rubocop, which checks Ruby code style against the
+    [community Ruby style guide](https://github.com/bbatsov/ruby-style-guide)
+*   *markdownlint* - runs markdownlint, also known as mdl
+    (this checks for errors in the markdown text)
+*   *rails_best_practices* - check Ruby against rails best practices
+    using the gem
+    [rails_best_practices](http://rails-bestpractices.com/)
+*   *brakeman* - runs Brakeman, which is a static source code analyzer
+    to look for Ruby on Rails security vulnerabilities
+*   *license_okay* - runs license_finder to check the
+    OSS licenses of gem dependencies (transitively).
+    A separate dependency on file 'license_finder_report.html' generates
+    a detailed license report in HTML format.
+*   *whitespace_check* - runs "git diff --check" to detect
+    trailing whitespace in latest diff
+    *yaml_syntax_check* - checks syntax of YAML (.yml) files.
+    Note that the automated test suite includes a number of specific
+    checks on the criteria/criteria.yml file.
+*   *fasterer* - report on Ruby constructs with poor performance
+    (temporarily disabled until it supports Ruby 2.4)
+*   *eslint* - Perform code style check on JavaScript using eslint
+*   *test* - run the automated test suite
 
 Running "rake test" (the automated test suite) will show
 "Run options: --seed ...", "# Running:", and a series of dots (passing tests).
+
+### Expected noise from 'rake'
+
+Ruby 2.4.0 has deprecated the Fixnum and Bignum classes, but they are used
+by some gems we depend on.
+Because we now use Ruby 2.4.0, there may be several warnings of this form:
+
+~~~~
+FILENAME.rb:LINE: warning: constant ::Fixnum is deprecated
+FILENAME.rb:LINE: warning: constant ::Bignum is deprecated
+~~~~
+
 In some cases you'll see a test retry message like this
 (but it will eventually pass):
 
@@ -393,8 +468,11 @@ Sometimes these full tests cause spurious failures, so we intentionally
 retry failing tests to eliminate false failure reports (to make sure the
 problem is in the software under test, and not in our test framework).
 
-Here are some other tools we use, though they are not currently integrated into
-the default "rake" checking task:
+### Other tools
+
+Here are some other tools we use for checking quality or security,
+though they are not currently integrated
+into the default "rake" checking task:
 
 * OWASP ZAP web application security scanner.
   You are encouraged to use this and other web application scanners to find and
@@ -404,6 +482,21 @@ the default "rake" checking task:
 * W3C link checker <https://validator.w3.org/checklink>
 * W3C markup validation service <https://validator.w3.org/>
 
+Here are some online tools we sometimes use to check for performance issues
+(including time to complete rendering, download size in bytes, etc.):
+
+* [WebPageTest](https://www.webpagetest.org/)
+* [Varvy PageSpeed](https://varvy.com/pagespeed/)
+* [Yellow lab tools](http://yellowlab.tools/) - Examines performance.
+  It can notice issues like excessive accesses of the DOM from JavaScript.
+  It's OSS; see
+  ([YellowLabTools on GitHub](https://github.com/gmetais/YellowLabTools))
+* [Pingdom](https://tools.pingdom.com/)
+
+This
+[article on Rails front end performance](https://www.viget.com/articles/rails-front-end-performance)
+may be of use to you if you're interested in performance.
+
 We sometimes run this to check if assets compile properly (see
 [heroku_rails_deflate](https://github.com/mattolson/heroku_rails_deflate)):
 
@@ -411,11 +504,28 @@ We sometimes run this to check if assets compile properly (see
 RAILS_ENV=production rake assets:precompile
 ~~~~
 
+### Testing during continuous integration
+
 Note that we also use
 [CircleCI](https://circleci.com/gh/linuxfoundation/cii-best-practices-badge)
 for continuous integration tools to check changes
 after they are checked into GitHub; if they find problems, please fix them.
+These run essentially the same set of checks as the default rake task.
 
+## Git commit messages
+
+When writing git commit messages, try to follow the guidelines in
+[How to Write a Git Commit Message](https://chris.beams.io/posts/git-commit/):
+
+1.  Separate subject from body with a blank line
+2.  Limit the subject line to 50 characters.
+    (We're flexible on this, but *do* limit it to 72 characters or less.)
+3.  Capitalize the subject line
+4.  Do not end the subject line with a period
+5.  Use the imperative mood in the subject line (*command* form)
+6.  Wrap the body at 72 characters ("<tt>fmt -w 72</tt>")
+7.  Use the body to explain what and why vs. how
+    (git tracks how it was changed in detail, don't repeat that)
 
 ## Reuse (supply chain)
 
@@ -438,6 +548,9 @@ Here are guidelines for adding Ruby gems:
 * For Ruby gems, look at its data at <https://rubygems.org/> to learn
   more about it. E.G., is it still actively maintained?
   (e.g., it uses semantic versioning and have a ChangeLog).
+* For some tips on how to evaluate gems, see
+  <a href="https://evilmartians.com/chronicles/open-source-software-whats-in-a-poke">"Back-end Open-Source Software: What is in a poke?"
+  by Sergey Dolganov (January 26, 2017)</a>.
 * All required reused components MUST be open source software (OSS).
   It is *not* acceptable to insert a dependency
   that *requires* proprietary software; making it portable so it *can* use
@@ -459,6 +572,11 @@ For any reused software, here are a few general rules:
   The repackage will often help make it work more cleanly
   with the Rails application, and it also suggests that the package is
   a more common one (and thus more likely to be maintained).
+* Check if the gem is thread-safe, in particular, avoid gems that
+  don't control modifying objects shared between threads.
+  This is less of an issue today, because in many cases the objects
+  being modified are not being shared, and threaded implementations
+  have become common (Heroku encourages them).
 
 Someday we hope to add "have one of our badges" as a preference.
 
@@ -513,7 +631,7 @@ transitively.
 In short, we have strong package management
 over the exact versions used for each gem, and we
 can easily update our dependencies.
-That's important, because transitively depend on over 150 gems.
+That's important, because we transitively depend on over 150 gems.
 
 The default 'rake' task includes the rake 'bundle_audit' task.
 This reports if a Ruby gem we use has a publicly known
@@ -620,33 +738,21 @@ If you want to change the current version of Ruby used in the project,
 use `cd` to go this project's top directory,
 and use 'git pull' to ensure this branch is up-to-date.
 You should normally use `git checkout -b NEW_BRANCH_NAME` for the new branch.
-Then run these commands:
+Then run the following command:
 
 ~~~~sh
-(cd $HOME/.rbenv/plugins/ruby-build && git pull) # Update ruby-build list
-rbenv install NEW_VERSION_NUMBER                 # Install with ruby-build
-rbenv local NEW_VERSION_NUMBER                   # Use new Ruby version
-gem install bundler                              # Reinstall bundler for it
-rbenv rehash                                     # Tell rbenv about bundler
-bundle install                                   # Reinstall gems
-rbenv rehash                                     # Update rbenv commands
+./update-ruby NEW_VERSION_NUMBER
 ~~~~
 
-Note that the `rbenv local` command changes the contents of the tracked file
-`.ruby-version`.  Be sure to run `git commit -a` and `git push`
-after doing this.
+Note at the end of this script a `git commit -as` will be initiated,
+but you will need to be sure to run `git push` after doing this.
 
 If you've done a `git pull` and the Ruby version has changed in file
 `.ruby-version` (e.g., you're seeing the rbenv: version... not installed
 error message), you need to run these similar steps:
 
 ~~~~sh
-(cd $HOME/.rbenv/plugins/ruby-build && git pull) # Update ruby-build list
-rbenv install $(cat .ruby-version)               # Install with ruby-build
-gem install bundler                              # Reinstall bundler for it
-rbenv rehash                                     # Tell rbenv about bundler
-bundle install                                   # Reinstall gems
-rbenv rehash                                     # Update rbenv commands
+./update-ruby
 ~~~~
 
 For more details about updating Ruby versions with rbenv, see

@@ -1,14 +1,18 @@
 # frozen_string_literal: true
-# rubocop:disable Rails/FindEach
+
 class Criteria
-  ATTRIBUTES = CriteriaHash.reduce([]) do |attributes, criterion|
-    attributes | criterion[1].keys
-  end.map(&:to_sym).freeze
-  FUTURE_ATTRIBUTES = %i(
-    met_url na_placeholder na_suppress unmet
-    unmet_suppress
-  ).freeze
-  ACCESSORS = (%i(name) + ATTRIBUTES + FUTURE_ATTRIBUTES).freeze
+  ACCESSORS = %i[
+    name category level future
+    rationale autofill
+    met_suppress na_suppress unmet_suppress
+    met_justification_required met_url_required met_url
+    na_allowed na_justification_required
+    major minor unmet
+  ].freeze
+
+  LOCALE_ACCESSORS = %i[
+    description details met_placeholder unmet_placeholder na_placeholder
+  ].freeze
 
   include ActiveModel::Model
   attr_accessor(*ACCESSORS)
@@ -19,42 +23,47 @@ class Criteria
 
     def [](key)
       instantiate if @criteria.blank?
-      @criteria[key.to_sym]
+      @criteria[key]
     end
 
-    def active
-      @active ||= reject(&:future?)
+    def active(level)
+      instantiate if @criteria.blank?
+      @active ||= {}
+      @active[level] ||= @criteria[level].values.reject(&:future?)
     end
 
     def all
       instantiate if @criteria.blank?
-      @criteria.values
+      @criteria.values.map(&:keys).flatten.uniq
     end
 
     def each
-      all.each { |criterion| yield criterion }
-      self
+      instantiate if @criteria.blank?
+      @criteria.each { |level| yield level }
     end
 
     def instantiate
       # Creates class instances on first use and after reload! in rails console
       @criteria = {}
-      CriteriaHash.each do |criterion|
-        name = criterion[0].to_sym
-        @criteria[name] = new({ name: name }.merge(criterion[1]))
+      CriteriaHash.each do |level, level_hash|
+        @criteria[level] = {}
+        level_hash.each do |criterion|
+          name = criterion[0].to_sym
+          @criteria[level][name] =
+            new({ name: name, level: level }.merge(criterion[1]))
+        end
       end
     end
 
     def keys
-      map(&:name)
+      instantiate if @criteria.blank?
+      @criteria.keys
     end
 
     def to_h
       CriteriaHash
     end
   end
-
-  # Instance methods
 
   def future?
     future == true
@@ -70,12 +79,34 @@ class Criteria
     met_url_required == true
   end
 
+  def met_justification_required?
+    met_justification_required == true
+  end
+
   def must?
     category == 'MUST'
   end
 
   def na_allowed?
     na_allowed == true
+  end
+
+  def na_justification_required?
+    na_justification_required == true
+  end
+
+  def description
+    return nil unless I18n.exists?(
+      "criteria.#{level}.#{name}.description", :en
+    )
+    I18n.t("criteria.#{level}.#{name}.description")
+  end
+
+  def details
+    return nil unless I18n.exists?(
+      "criteria.#{level}.#{name}.details", :en
+    )
+    I18n.t("criteria.#{level}.#{name}.details")
   end
 
   delegate :present?, to: :details, prefix: true

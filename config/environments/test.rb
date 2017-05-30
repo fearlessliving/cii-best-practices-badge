@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 Rails.application.configure do
   # Settings specified here will take precedence over those in
   # config/application.rb.
@@ -21,10 +22,14 @@ Rails.application.configure do
 
   # Show full error reports and disable caching.
   config.consider_all_requests_local       = true
-  config.action_controller.perform_caching = false
+  config.action_controller.perform_caching = true
+  config.cache_store = :memory_store, { size: 64.megabytes }
 
   # Raise exceptions instead of rendering exception templates.
   config.action_dispatch.show_exceptions = false
+
+  # Raise exceptions during test if a translation is missing
+  config.action_view.raise_on_missing_translations = true
 
   # Disable request forgery protection in test environment.
   config.action_controller.allow_forgery_protection = false
@@ -44,6 +49,11 @@ Rails.application.configure do
 
   # Raises error for missing translations
   # config.action_view.raise_on_missing_translations = true
+
+  # Enable Rack's built-in compression mechanism; this is important for people
+  # with slow network connections.  Enable during tests to make test
+  # more like production
+  config.middleware.use Rack::Deflater
 
   config.after_initialize do
     # The 'bullet' gem watches application queries and notifies

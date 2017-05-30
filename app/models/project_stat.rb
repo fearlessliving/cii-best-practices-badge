@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ProjectStat < ActiveRecord::Base
-  STAT_VALUES = %w(0 25 50 75 90 100).freeze
+  STAT_VALUES = %w[0 25 50 75 90 100].freeze
 
   # Note: The constants below are for clarity.  Don't just change them,
   # or trend lines will be recording different cutoffs.
@@ -51,13 +51,23 @@ class ProjectStat < ActiveRecord::Base
                .where('created_at < updated_at').count
       self.active_in_progress =
         Project.updated_since(ACTIVE_PERIOD.day.ago)
-               .where('badge_percentage < 100').count
+               .where('badge_percentage_0 < 100').count
       self.active_edited_in_progress =
         Project.updated_since(ACTIVE_PERIOD.day.ago)
                .where('created_at < updated_at')
-               .where('badge_percentage < 100').count
+               .where('badge_percentage_0 < 100').count
     end
     self # Return self to support method chaining
   end
   # rubocop:enable Metrics/AbcSize
+
+  # Return the last ProjectStat value available in the month of "date";
+  # returns nil if no ProjectStat is available in that month.
+  # Note that created_at is an index, so this should be extremely fast.
+  def self.last_in_month(query_date)
+    ProjectStat.all
+               .where('created_at >= ?', query_date.beginning_of_month)
+               .where('created_at <= ?', query_date.end_of_month)
+               .reorder(:created_at).last
+  end
 end

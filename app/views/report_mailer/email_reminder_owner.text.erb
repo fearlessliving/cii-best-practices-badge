@@ -6,15 +6,16 @@ and its badge entry has not been updated in a while.
 Your best practices badge entry is at
 <%= @project_info_url %>
 and was last updated on <%= @project.updated_at %>.
-It is currently at <%= @project.badge_percentage %>% (out of 100%).
+It is currently at <%= @project.badge_percentage_0 %>% (out of 100%).
 
 We encourage you to keep making progress.
 Please visit your badge entry at
 <%= @project_info_url %>
 to complete the information and get your badge!
 
-If you want to see only what you're missing, visit your badge entry, and
-then click on the button near the top labelled "Hide met or N/A criteria".
+If you want to see only what you're missing, visit your badge entry,
+select the button near the top labelled "Expand all panels", and
+then select the button near the top labelled "Hide met or N/A criteria".
 If you have questions, or need help, please contact
 cii-badges-questions-owner@lists.coreinfrastructure.org
 or file an issue at
@@ -31,4 +32,4 @@ and eventually earn the badge.
 
 Thank you for your time.
 
---- David A. Wheeler, CII Best Practices Badge Technical Lead
+<%= t 'report_mailer.ending' %>

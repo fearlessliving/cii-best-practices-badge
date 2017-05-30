@@ -15,12 +15,15 @@ AllCops:
     - '**/Rakefile'
   Exclude:
     - 'db/schema.rb'
+    - 'db/migrate/2015*.rb'
+    - 'db/migrate/2016*.rb'
 Documentation:
   Enabled: false
 Lint/HandleExceptions:
   Exclude:
     - 'bin/*'
 Metrics/AbcSize:
+  Max: 17
   Exclude:
     - 'db/migrate/*'
 Metrics/ClassLength:
@@ -32,6 +35,9 @@ Metrics/LineLength:
 Metrics/MethodLength:
   Exclude:
     - 'db/migrate/*'
+Rails/SkipsModelValidations:
+  Exclude:
+    - 'test/**/*.rb'
 Style/AutoResourceCleanup:
   Enabled: true
 Style/CollectionMethods:
@@ -48,6 +54,9 @@ Style/FirstMethodParameterLineBreak:
   Enabled: true
 Style/MultilineAssignmentLayout:
   Enabled: true
+Style/NegatedIf:
+  Enabled: true
+  EnforcedStyle: postfix
 Style/OptionHash:
   Enabled: true
 Style/StringMethods:

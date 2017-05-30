@@ -16,6 +16,10 @@ on how to install this software (e.g., for development).
 In this document we'll use the term "open source software" (OSS),
 and treat Free/Libre and Open Source Software (FLOSS) as a synonym.
 
+The following figure shows a high-level design of the implementation:
+
+![Design](./design.png)
+
 ## Requirements
 
 The BadgeApp web application MUST:
@@ -43,10 +47,9 @@ The BadgeApp web application MUST:
    project is on GitHub.  Automating filling in data is a never-ending
    process of refinement. Thus, we intend to fill a few to start, and then
    add more automation over time.
-
-See the separate
-[security](security.md) document for more about security, including
-its requirements.
+8. Be secure.  See the separate
+   [security](security.md) document for more about security, including
+   its requirements.
 
 There are many specific requirements; instead of a huge requirements document,
 most specific requirements are proposed and processed via its
@@ -70,8 +73,7 @@ Some other key components we use are:
 - Imagesloaded <https://github.com/desandro/imagesloaded>
   (to ensure images are loaded before displaying them)
 - Puma as the webserver - not webrick, because Puma can handle multiple
-  processes and multiple threads.  We don't use multiple threads right
-  now, but that's desirable in the future. See:
+  processes and multiple threads.  See:
   <https://devcenter.heroku.com/articles/ruby-default-web-server>
 - A number of supporting Ruby gems (see the Gemfile)
 
@@ -112,8 +114,23 @@ The application is configured by various environment variables:
   since project last updated before sending reminder
 * LAST_SENT_REMINDER (default 60): Minimum number of days since
   project was last sent a reminder
-* RAILS_ENV (default 'development'): Rails environment.
+* RAILS_ENV (default 'development'): Rails environment, one of
+  'test', 'development', 'fake_production', and 'production'.
   The master, staging, and production systems set this to 'production'.
+  See the discussion below about fake_production.
+* BADGEAPP_DAY_FOR_MONTHLY: Day of the month to monthly activities, e.g.,
+  send out monthly reminders.  Default 5.  Set to 0 to disable monthly acts.
+* FASTLY_CLIENT_IP_REQUIRED: If present, download the Fastly list of
+  client IPs, and only let those IPs make requests.  Enabling this
+  counters cloud piercing.  This isn't on by default, but the environment
+  variables are set on our tiers.
+* DB_POOL: Set the number of connections the app can hold to the database.
+  This is important for performance on Heroku; see:
+  <https://devcenter.heroku.com/articles/concurrency-and-database-connections>.
+  If unset, defaults to RAILS_MAX_THREADS + 1 for this app,
+  because in addition to every web thread we occasionally fire a task to
+  process occasional requests (such as the daily task).
+  If RAILS_MAX_THREADS is not set, presume it is 5.
 
 This can be set on Heroku.  For example, to change the maximum number
 of email reminders to inactive projects on production-bestpractices:
@@ -125,16 +142,28 @@ heroku config:set --app production-bestpractices BADGEAPP_MAX_REMINDERS=5
 On Heroku, using config:set to set a value will automatically restart the
 application (causing it to take effect).
 
+The TZ (timezone) environment variable is set to ":/usr/share/zoneinfo/UTC"
+on all tiers.  We want all logging to be done in UTC (because then moving
+the servers has no affect on logs).  Using leading-colon helps performance
+on many systems, especially many Rails systems (because it skips
+many system calls), and it's easy enough to do.  More information is at
+[How setting the TZ environment variable avoids thousands of system calls](https://blog.packagecloud.io/eng/2017/02/21/set-environment-variable-save-thousands-of-system-calls/).
+This was implemented with:
+
+~~~~
+heroku config:set --app production-bestpractices TZ=:/usr/share/zoneinfo/UTC
+~~~~
+
 ## Terminology
 
 This section describes key application-specific terminology.
 
-The web application tracks data about many OSS *projects*,
+The web application tracks data about many FLOSS *projects*,
 as identified and entered by *users*.
 
 We hope that projects will (eventually) *achieve* a *badge*.
 A project must *satisfy* (or "pass") all *criteria*
-(singular: criterion) enough to achieve a badge.
+(singular: criterion) *enough* to achieve a badge.
 
 The *status* of each criterion, for a given project, can be one of:
 'Met', 'Unmet', 'N/A' (not applicable, a status that only some
@@ -184,7 +213,6 @@ Then point your web browser at "localhost:3000".
 
 See the separate
 [security](security.md) document for more about security.
-
 
 ## Interface
 
@@ -266,13 +294,12 @@ The following search parameters are supported:
 See app/controllers/project_controllers.rb for how these
 are implemented.
 
-
 ## Changing criteria
 
 To modify the text of the criteria, edit these files:
 
 - doc/criteria.md - Document
-- ./criteria.yml - YAML file used by BadgeApp for criteria information.
+- criteria/criteria.yml - YAML file used by BadgeApp for criteria information.
 
 If you're adding/removing fields (including criteria), be sure to also edit
 app/views/projects/\_form.html.erb
@@ -353,6 +380,106 @@ modify the autofill code in the app/lib/ directory.
 Be sure to "git add" all new files, including any migration files,
 and then use "git commit" and "git push".
 
+## Internationalization (i18n) and localization (l10n)
+
+This application is "internationalized", that is, it allows
+users to select their locale, and then presents information
+(such as human-readable text) in the selected locale.
+If no locale is indicated, 'en' (English) is used.
+
+To learn more about Rails and internationalization, please read the
+[Rails Internationalization guide](http://guides.rubyonrails.org/i18n.html).
+
+We can *always* use help in localizing (that is, in providing translations
+of text to various locales) - please help!
+
+### Requesting the locale at run-time
+
+Users indicate the locale via the URL.
+The recommended form is at the beginning of that path, e.g.,
+<https://bestpractices.coreinfrastructure.org/fr/projects/>
+selects the locale "fr" (French) when displaying "/projects".
+This even works at the top page, e.g.,
+<https://bestpractices.coreinfrastructure.org/fr/>.
+It also supports the locale as a query parameter, e.g.,
+<https://bestpractices.coreinfrastructure.org/projects?locale=fr>
+
+### Fixing locale data
+
+Almost all locale-specific data is stored in the "config/locales"
+directory (one file for each locale, named LOCALE.yml). This data is
+automatically loaded by Rails.  A few of the static files are served
+directly, with a separate file for each locale;
+see the "app/views/static_pages" directory.
+If you need to fix a translation, that's where the data is.
+
+### Adding a new locale
+
+To add a new locale, modify the file "config/initializers/i18n.rb"
+and edit the assignment of "I18n.available_locales" to add
+the new locale.  The system will now permit users to request it.
+
+Next, create a stub locale file in the "config/locales" directory
+named LOCALE.yml.  A decent way to start is:
+
+~~~~
+cd config/locales
+cp en.yml NEW_LOCALE.yml
+~~~~
+
+Edit the top of the file to change "en:" to your locale name.
+
+At one time we suggested going to this page to get locale information
+for Rails built-ins, and including that:
+<https://github.com/svenfuchs/rails-i18n/blob/master/rails/locale/>
+However, we now include the gem 'rails-i18n', and that provides
+the same kind of functionality while being easier to maintain.
+
+Now create the matching static pages in the
+the "app/views/static_pages"  (cd "../..", then cd "app/views/static_pages",
+then create the files using the new locale name).
+Be sure all hypertext links to locations within the application
+include the locale (e.g., use "/fr/projects" not "/projects" as the URL);
+automatically-generated URLs include the locale, but constant strings do not.
+
+Now the hard part: actually translating.
+Edit the '.yml' (YAML) file to create the translations.
+As always, you need to conform to YAML syntax.
+For example,
+strings that end in a colon (":") *must* be escaped (e.g., by
+surrounding them with double-quotes).
+Keys are *only* in lower case and never use dash (they use underscore).
+
+Finally, you will need to update app/assets/javascripts/criteria.js.erb
+to depend on the new locale's yml file, this allows the precompiler to be
+to be notified if the contents of criteria.js should have changed.
+Simply add the following line to the top of criteria.js.erb
+
+~~~~
+depend_on NEW_LOCALE.yml
+~~~~
+
+### Programmatically accessing a locale
+
+To learn more about Rails and internationalization, please read the
+[Rails Internationalization guide](http://guides.rubyonrails.org/i18n.html).
+
+Inside views you can use the 't' helper, e.g.,
+
+~~~~
+    <%= t('hello') %>
+    <%= t('.current_scope') %>
+~~~~
+
+Inside other code (e.g., in a flash message), use `I18n.t`:
+
+~~~~
+    I18n.t 'hello'
+~~~~
+
+You can access 'I18n.locale' to see the current locale's value
+(this is a thread-local query, so this works fine when multiple
+threads are active).
 
 ## App authentication via GitHub
 
@@ -386,7 +513,8 @@ GITHUB_KEY='client id' GITHUB_SECRET='client secret' rails s
 where *client id* and *client secret* are registered OAuth2 credentials
 of the app.
 
-The authorization callback URL in GitHub is: http://localhost:3000/auth/github
+The authorization callback URL in GitHub is:
+<http://localhost:3000/auth/github>
 
 [1] <https://github.com/settings/applications/new>
 [2] <https://devcenter.heroku.com/articles/config-vars>
@@ -433,7 +561,7 @@ You can force-create new users and make them admins
 (again, if you have the rights to do so).
 To create new github user, first get their github uid from their
 github username (nickname) by looking at
-https://api.github.com/users/USERNAME
+<https://api.github.com/users/USERNAME>
 and getting the "id" value.
 Then run this, replacing all-caps stubs with the values in single quotes
 (this will create a local id automatically):
@@ -457,12 +585,49 @@ heroku pg:backups capture
 curl -o latest.dump $(heroku pg:backups public-url)
 ~~~~
 
+## Recovering a deleted or mangled project entry
+
+If you want to restore a deleted project, or reset its values,
+we have some tools to help.
+
+Put the project data in JSON form in the file "project.json"
+(at the top of the tree, typically in "~/cii-best-practices-badge").
+If this was a recent deletion, then you can simply copy the JSON-formatted
+data from the email documenting the deletion.
+
+Then run:
+
+~~~~
+    rake create_project_insertion_command
+~~~~
+
+This will create a file "project.sql" that has SQL insertion command.
+
+You'll next need to delete the project if it already exists, because
+it's an insertion command.
+
+Now you need to execute the SQL command on the correct database.
+Locally you can do this (you may want to set RAILS_ENV to
+"production"):
+
+~~~~
+    rails db < project.sql
+~~~~
+
+If you want the data to be on the true production site, you'll need
+privileges to execute database commands, then run this:
+
+~~~~
+    heroku pg:psql --app production-bestpractices < project.sql
+~~~~
+
 ## Purging Fastly CDN cache
 
-If a change in the application causes any badge level(s) to change,
+If a change in the application causes any badge level(s) to change or
+changes the output of a projects json file,
 you need to purge the Fastly CDN cache after pushing.
 Otherwise, the Fastly CDN cache will continue to serve the old badge
-images (until they time out).
+images as well as project json files (until they time out).
 
 You can purge the Fastly CDN cache this way (assuming you're
 allowed to log in to the relevant Heroku app):
@@ -496,7 +661,9 @@ Normally you should just push changes to "master" first, so that
 CircleCI will test it.  If you want to push directly to Heroku
 (and have the necessary rights):
 
+~~~~
 git remote add heroku https://git.heroku.com/master-bestpractices.git
+~~~~
 
 Now you can directly deploy to Heroku:
 
@@ -504,7 +671,6 @@ Now you can directly deploy to Heroku:
 git checkout master
 git push heroku master
 ~~~~
-
 
 ## Auditing
 
@@ -548,62 +714,13 @@ override the user input.
 
 Currently we allow people to log in using their GitHub account
 or a local account (so people who don't want to use GitHub don't need to).
+We trust GitHub's answers about whether or not a user is who they say they
+are, and about which GitHub projects they can edit.
 
-## Ideas about Authentication
-
-An important issue is how to handle authentication.
-Here is our current plan, which may change (suggestions welcome).
-
-In general, we want to ensure that only trusted developer(s) of a project
-can create or modify information about that project.
-That means we will need to authenticate individual *users* who enter data,
-and we also need to authenticate that a specific user is a trusted developer
-of a particular project.
-
-For our purposes the project's identifier is the project's main URL.
-This gracefully handles project forks and
-multiple projects with the same human-readable name.
-We intend to prevent users from editing the project URL once
-a project record has been created.
-Users can always create another table entry for a different project URL,
-and we can later loosen this restriction (e.g., if a user controls both the
-original and new project main URL).
-
-We plan to implement authentication in these three stages:
-1.  A way for GitHub users to authenticate themselves and
-show that they control specific projects on GitHub.
-2.  An override system so that users can report on other projects
-as well (this is important for debugging and error repair).
-3.  A system to support users and projects not on GitHub.
-
-For GitHub users reporting about specific projects on GitHub,
-we plan to hook into GitHub itself.
-We believe we can use GitHub's OAuth for user authentication.
-If someone can administer a GitHub project,
-then we will presume that they can report on that project.
-We will probably use the &#8220;divise&#8221; module
-for authentication in Rails (since it works with GitHub).
-
-We will next implement an override system so that users can report on
-other projects as well.
-We will add a simple table of users and the URLs of the projects
-whose data they can *also* edit (with "*" meaning "any project").
-A user who can edit information for
-any project would presumably also be able to modify
-entries of this override table (e.g., to add other users or project values).
-This will enable the Linux Foundation to easily
-override data if there is a problem.
-At the beginnning the users would still be GitHub users, but the project URL
-they are reporting on need not be on GitHub.
-
-Finally, we will implement a user account system.
-This enables users without a GitHub user account to still use the system.
-We would store passwords for each user (as iterated cryptographic hashes
-with per-user salt; currently we expect to use bcrypt for iteration),
-along with a user email address to eventually allow for password resets.
-
-All users (both GitHub and non-GitHub) would have a cryptographically
-random token assigned to them; a project URL page may include the
+We currently can't be sure if a local user is actually allowed to
+edit a given project, but admins can override any claims if necessary.
+If this becomes a problem, we could make it possible for a
+a project URL page to include the
 token (typically in an HTML comment) to prove that a given user is
 allowed to represent that particular project.
 That would enable projects to identify users who can represent them
@@ -612,15 +729,9 @@ without requiring a GitHub account.
 Future versions might support sites other than GitHub; the design should
 make it easy to add other sites in the future.
 
-We intend to make public the *username* of who last
+We make public the *username* of who last
 entered data for each project (generally that would be the GitHub username),
 along with the edit time.
-The data about the project itself will also be public, as well
-as its badge status.
-
-In the longer term we may need to support transition of a project
-from one URL to another, but since we expect problems
-to be relatively uncommon, there is no need for that capability initially.
 
 ## Plans: Who can edit project P?
 
@@ -628,29 +739,25 @@ to be relatively uncommon, there is no need for that capability initially.
 
 A user can edit project P if one of the following is true:
 
-1.  If the user has "superuser" permission then the user can edit the
-badge information about any project.
-This will let the Linux Foundation fix problems.
-2.  If project P is on GitHub AND the user is authorized via GitHub
-to edit project P, then that user can edit the badge information about project P.
-In the future we might add repos other than GitHub, with the same kind of rule.
-3.  If the user's cryptographically randomly assigned
-"project edit validation code" is on the project's main web site
-(typically in an HTML comment), then the user can edit the badge
-information about project P.
-Note that if the user is a local account (not GitHub),
-then the user also has to have their email address validated first.
+1. If the user is an "admin" then the user can edit the
+  badge information about any project.
+  This will let the Linux Foundation fix problems.
+2. If project P is on GitHub AND the user is authorized via GitHub
+  to edit project P, then that user can edit the badge information about
+  project P.  In the future we might add repos other than GitHub, with
+  the same kind of rule.
+3. If the user created this badge entry, the user can edit it.
 
 ## GitHub-related badges
 
 Pages related to GitHub-related badges include:
 
-*   <http://shields.io/> - serves files that display a badge
-(as good-looking scalable SVG files)
-*   <https://github.com/badges/shields> -  Shields badge specification,
-website and default API server (connected to shields.io)
-*   <http://nicbell.net/blog/github-flair> - a blog post that identifies
-and discusses popular GitHub flair (badges)
+* <http://shields.io/> - serves files that display a badge
+  (as good-looking scalable SVG files)
+* <https://github.com/badges/shields> -  Shields badge specification,
+  website and default API server (connected to shields.io)
+* <http://nicbell.net/blog/github-flair> - a blog post that identifies
+  and discusses popular GitHub flair (badges)
 
 We want GitHub users to think of this
 as &#8220;just another badge to get.&#8221;
@@ -671,6 +778,11 @@ provide useful examples.
 Mozilla's Open Badges project at <http://openbadges.org/>
 is interesting, however, it is focused on giving badges to
 individuals not projects.
+
+## CircleCI
+
+The CircleCI build execution is configured to use Ubuntu 14.04 (Trusty);
+it was Ubuntu 12.04 (Precise).
 
 ## License detection
 
@@ -796,7 +908,11 @@ checklink-norobots -b -e \
 
 ## PostgreSQL Dependencies
 
-Our current database implementation requires PostgreSQL.  Our internal
+As a policy, we minimize the number of dependencies on any particular
+database implementation where we can.  Where possible, please
+prefer portable constructs (such as ActiveRecord).
+
+However, our current implementation requires PostgreSQL.  Our internal
 project search engine uses PostgreSQL specific commands.  Additionally,
 we are using the PostgreSQL specific citext character string type to
 store email addresses.  This allows us, within PostgreSQL, to store
@@ -809,12 +925,13 @@ since this could possibly allow for a number of duplicate users to be
 created and the possibility of two users from the same domain having
 emails which differ only in case is exceedingly rare.
 
+Using these PostgreSQL-specific capabilities makes the software much
+smaller.  Limiting these dependencies makes it easier to port to a
+different RDBMS if necessary.
+Since PostgreSQL is itself OSS, this isn't as dangerous as becoming
+dependent on a single supplier whose product cannot be forked.
 
 ## Forbidden Passwords
-
-Currently we allow local passwords if they are 7 characters or longer.
-We intend to change this in the future, described here
-(we currently load bad passwords, we just don't check them yet).
 
 [NIST has proposed draft password rules in 2016](https://nakedsecurity.sophos.com/2016/08/18/nists-new-password-rules-what-you-need-to-know/).
 They recommend having a minimum of 8 characters in passwords and
@@ -843,7 +960,43 @@ rm -f raw-bad-passwords-lowercase.txt.gz
 gzip --best raw-bad-passwords-lowercase.txt
 ~~~~
 
-# See also
+## Project stats omission on 2017-02-28
+
+The production site maintains a number of daily statistics and can
+[display the statistics graphically](https://bestpractices.coreinfrastructure.org/project_stats), but it is
+missing a report for 2017-02-28.
+This was due to a multi-hour downtime in
+Amazon’s S3 web-based storage service, part of
+Amazon Web Services (AWS), which took a large number of sites
+(not just ours).
+For more information you can see the story in
+[USA Today](https://www.usatoday.com/story/tech/news/2017/02/28/amazons-cloud-service-goes-down-sites-scramble/98530914/),
+[Zero Hedge](http://www.zerohedge.com/news/2017-02-28/amazon-cloud-reporting-increased-error-rates-secgov-possibly-impacted),
+and
+[Tech Crunch](https://techcrunch.com/2017/02/28/amazon-aws-s3-outage-is-breaking-things-for-a-lot-of-websites-and-apps/).
+
+## fake_production
+
+If you want to debug a problem that only appears in a production-like
+envionment, try the 'fake_production' environment.
+Here is how to enable it:
+
+~~~~
+RAILS_ENV=fake_production rails s
+~~~~
+
+This environment is almost exactly like production, with the
+following differences:
+
+* does not force HTTPS (TLS), so you can interact with it locally
+* enables byebug so that you can insert breakpoints
+* disables timeouts, so that you aren't rushed trying
+  to track down a problem before the timeout ends.
+
+Other environment variables might be usefully set in the command prefix,
+such as "DATABASE_URL=development".
+
+## See also
 
 See the separate "[background](./background.md)" and
 "[criteria](./criteria.md)" pages for more information.

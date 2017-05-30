@@ -1,0 +1,55 @@
+            <div class="hidable-text-entry">
+            <span><%= t('projects.form_basics.project_name.description') %></span>
+            <%= render(partial: "details", locals: {
+                       criterion: "project_name",
+                       details: t('projects.form_basics.project_name.details')
+}) %>
+            <%= f.text_field :name, hide_label: true, class:"form-control",
+                             placeholder: t('projects.form_basics.project_name.placeholder'),
+                             spellcheck: false,
+                             disabled: is_disabled %>
+            </div>
+
+            <div class="hidable-text-entry">
+            <span><%= t('projects.form_basics.description.description') %></span>
+            <% if is_disabled %>
+              <div class="discussion-markdown">
+                <%= markdown(project[:description]) %>
+              </div>
+            <% else %>
+              <%= render(partial: "details", locals: {
+                   criterion: "description",
+                   details: t('projects.form_basics.description.details')
+}) %>
+            <%= f.text_area :description, class:"form-control", hide_label: true,
+                            placeholder: t('projects.form_basics.description.placeholder'),
+                            lang: 'en', spellcheck: true,
+                            disabled: is_disabled %>
+            <% end %>
+            </div>
+
+            <div class="hidable-text-entry">
+            <span><%= t('projects.form_basics.homepage_url.description') %></span>
+            <% if is_disabled %>
+              <div class="discussion-markdown">
+                 <%= link_to_if project.contains_url?(project.homepage_url), project.homepage_url, project.homepage_url, rel: 'nofollow' %>
+              </div>
+            <% else %>
+              <%= f.text_field :homepage_url, hide_label: true, class: "form-control",
+                               placeholder: t('projects.form_basics.homepage_url.placeholder'),
+                               label: "Project URL", disabled: is_disabled %>
+            <% end %>
+            </div>
+
+            <div class="hidable-text-entry">
+            <span><%= t('projects.form_basics.repo_url.description') %></span>
+            <% if is_disabled %>
+              <div class="discussion-markdown">
+                 <%= link_to_if project.contains_url?(project.repo_url), project.repo_url, project.repo_url, rel: 'nofollow' %>
+              </div>
+            <% else %>
+              <%= f.text_field :repo_url, class:"form-control", hide_label: true,
+                               placeholder:t('projects.form_basics.repo_url.placeholder'),
+                               disabled: is_disabled %>
+            <% end %>
+            </div>

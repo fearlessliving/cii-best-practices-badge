@@ -21,7 +21,7 @@ fi
 # If you modify this script, please check it with the "shellcheck"
 # shell static analysis tool.
 # The following enables some run-time error detection:
-set -e -u
+set -e
 
 
 ######################################################################
@@ -72,7 +72,8 @@ find_command () {
 #         (1) otherwise
 add_to_path () {
   if [ -e "$1" ] ; then
-    local pattern="PATH=.*"$(echo "$3" | sed -e "s/\./\\\./g")
+    local pattern
+    pattern="PATH=.*"$(echo "$3" | sed -e "s/\./\\\./g")
     if ! grep "$pattern" "$1" > /dev/null ; then
       echo "Modifying $1 to add $3 to path. NOTE: Use this command:"
       echo "  . $1"
@@ -151,7 +152,7 @@ case "$manager" in
   brew)
     # We'll use the brew version. Install these to rebuild rbenv:
     # add_pkg openssl libyaml libffi
-    add_pkg phantomjs rbenv ruby-build graphviz ;;
+    add_pkg phantomjs rbenv ruby-build graphviz postgres ;;
   apt-get)
     # We'll use the system version.  If you want to use the latest one
     # on GitHub, instead install these system components first:
@@ -159,7 +160,8 @@ case "$manager" in
     #         libreadline6-dev zlib1g-dev libncurses5-dev libffi-dev \
     #         libgdbm3 libgdbm-dev
     add_pkg ruby-build postgresql-server-dev-all postgresql \
-            postgresql-contrib cmake nodejs phantomjs graphviz ;;
+            postgresql-contrib cmake nodejs phantomjs graphviz \
+            pkg-config;;
   yum|dnf)
     add_pkg gcc openssl-devel libyaml-devel libffi-devel readline-devel \
             zlib-devel gdbm-devel ncurses-devel postgresql-devel cmake npm \
@@ -197,7 +199,8 @@ case "$manager" in
   yum|dnf)
     npm install phantomjs-prebuilt
     npm_path="node_modules/.bin"
-    export PATH="$(pwd)/$npm_path:$PATH"
+    PATH="$(pwd)/$npm_path:$PATH"
+    export PATH
     add_to_path "$shell_init" "$(pwd)" "$npm_path"
     sudo postgresql-setup initdb
     sudo systemctl enable postgresql
@@ -231,8 +234,8 @@ fi
 DO_LOCAL_RBENV='no'
 if is_command 'rbenv' ; then
   echo 'rbenv already installed.'
-  if ! rbenv --version | grep "1\.0\.0" > /dev/null 2>&1 ; then
-    echo '  Installed rbenv version != 1.0.0'
+  if ! rbenv --version | grep "1\..\.." > /dev/null 2>&1 ; then
+    echo '  Installed rbenv version != 1.x.x'
     DO_LOCAL_RBENV='yes'
   fi
 else
@@ -250,6 +253,7 @@ if [ $DO_LOCAL_RBENV = 'yes' ] ; then
   # Following performed in subshell so as not to change working directory.
   (
   cd ~/.rbenv
+  git fetch
   git checkout 3997a394d975136f468be196941492d3d0ef5143
   )
 fi
@@ -353,14 +357,24 @@ fi
 
 if ! git config user.name > /dev/null ; then
   echo 'What is your human-readable name (Example: David A. Wheeler)?'
-  read name
+  # Ensures CircleCI doesn't get stuck
+  if [ -z "$CIRCLECI" ]; then
+    read name
+  else
+    name="circleci"
+  fi
   git config --global user.name "$name"
   echo 'You may change it with: git config --global user.name "YOUR NAME"'
 fi
 
 if ! git config user.name > /dev/null ; then
   echo 'What is your email address?'
-  read email
+  # Ensures CircleCI doesn't get stuck
+  if [ -z "$CIRCLECI" ]; then
+    read email
+  else
+    email="circleci@circleci.com"
+  fi
   git config --global user.email "$email"
   echo 'You may change it with: git config --global user.email "EMAIL ADDRESS"'
 fi
@@ -376,7 +390,17 @@ if is_command shellcheck ; then
   shellcheck install-badge-dev-env
 fi
 
-bin/rake
+# On initial setup the test in feed_test.rb will fail with an
+# ActiveRecord::EnvironmentMismatchError
+# Running db:migrate in the test environment fixes the error.
+bin/rake db:migrate RAILS_ENV=test
+
+# Run the correct rake on CircleCI
+if [ -z "$CIRCLECI" ]; then
+  bin/rake
+else
+  bin/rake ci
+fi
 
 echo 'All done! Please reopen your terminal or run'
 echo '"source ~/.bashrc" to adjust your PATH.'

@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require 'test_helper'
 
 # rubocop:disable Metrics/ClassLength
@@ -7,6 +8,8 @@ class ProjectsControllerTest < ActionController::TestCase
     @project = projects(:one)
     @project_two = projects(:two)
     @perfect_unjustified_project = projects(:perfect_unjustified)
+    @perfect_passing_project = projects(:perfect_passing)
+    @perfect_silver_project = projects(:perfect_silver)
     @perfect_project = projects(:perfect)
     @user = users(:test_user)
     @admin = users(:admin_user)
@@ -57,12 +60,48 @@ class ProjectsControllerTest < ActionController::TestCase
     assert_response :success
     assert_select 'a[href=?]'.dup, 'https://www.nasa.gov'
     assert_select 'a[href=?]'.dup, 'https://www.nasa.gov/pathfinder'
+    # Ensure that there's an id for all criteria.
+    Criteria['0'].keys.each do |criterion|
+      assert_select '#' + criterion.to_s
+    end
+  end
+
+  test 'should show project with criteria_level=1' do
+    get :show, params: { id: @project, criteria_level: '1' }
+    assert_response :success
+    assert_select 'a[href=?]'.dup, 'https://www.nasa.gov'
+    assert_select 'a[href=?]'.dup, 'https://www.nasa.gov/pathfinder'
+    # Ensure that there's an id for all criteria.
+    Criteria['1'].keys.each do |criterion|
+      assert_select '#' + criterion.to_s
+    end
+  end
+
+  test 'should show project with criteria_level=2' do
+    get :show, params: { id: @project, criteria_level: '2' }
+    assert_response :success
+    assert_select 'a[href=?]'.dup, 'https://www.nasa.gov'
+    assert_select 'a[href=?]'.dup, 'https://www.nasa.gov/pathfinder'
+    # Ensure that there's an id for all criteria.
+    Criteria['2'].keys.each do |criterion|
+      assert_select '#' + criterion.to_s
+    end
+  end
+
+  test 'should show project JSON data' do
+    get :show_json, params: { id: @project, format: :json }
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal 'Pathfinder OS', body['name']
+    assert_equal 'Operating system for Pathfinder rover', body['description']
+    assert_equal 'https://www.nasa.gov', body['homepage_url']
   end
 
   test 'should get edit' do
     log_in_as(@project.user)
     get :edit, params: { id: @project }
     assert_response :success
+    assert_not_empty flash
   end
 
   test 'should fail to edit due to old session' do
@@ -118,6 +157,47 @@ class ProjectsControllerTest < ActionController::TestCase
     assert_response :unprocessable_entity
   end
 
+  test 'should fail to update stale project' do
+    new_name1 = @project.name + '_updated-1'
+    new_project_data1 = { name: new_name1 }
+    new_name2 = @project.name + '_updated-2'
+    new_project_data2 = {
+      name: new_name2,
+      lock_version: @project.lock_version
+    }
+    log_in_as(@project.user)
+    patch :update, params: { id: @project, project: new_project_data1 }
+    assert_redirected_to project_path(assigns(:project))
+    get :edit, params: { id: @project }
+    patch :update, params: { id: @project, project: new_project_data2 }
+    assert_not_empty flash
+    assert_template :edit
+    assert_difference '@project.lock_version' do
+      @project.reload
+    end
+    assert_equal @project.name, new_name1
+  end
+
+  test 'should fail update project with invalid control in name' do
+    log_in_as(@project.user)
+    old_name = @project.name
+    new_name = @project.name + "\x0c"
+    patch :update, params: {
+      id: @project, project: {
+        description: @project.description,
+        license: @project.license,
+        name: new_name,
+        repo_url: @project.repo_url,
+        homepage_url: @project.homepage_url
+      }
+    }
+    # "Success" here only in the HTTP sense - we *do* get a form...
+    assert_response :success
+    # ... but we just get the edit form.
+    assert_template :edit
+    assert_equal @project.name, old_name
+  end
+
   test 'should fail to update other users project' do
     new_name = @project_two.name + '_updated'
     assert_not_equal @user, @project_two.user
@@ -136,13 +216,25 @@ class ProjectsControllerTest < ActionController::TestCase
     assert_equal @project.name, new_name
   end
 
-  test 'A perfect project should have the badge' do
-    get :badge, params: { id: @perfect_project, format: 'svg' }
+  test 'A perfect passing project should have the passing badge' do
+    get :badge, params: { id: @perfect_passing_project, format: 'svg' }
     assert_response :success
-    assert_includes @response.body, 'passing'
+    assert_equal contents('badge-passing.svg'), @response.body
   end
 
-  test 'A perfect unjustified project should not have the badge' do
+  test 'A perfect silver project should have the silver badge' do
+    get :badge, params: { id: @perfect_silver_project, format: 'svg' }
+    assert_response :success
+    assert_equal contents('badge-silver.svg'), @response.body
+  end
+
+  test 'A perfect project should have the gold badge' do
+    get :badge, params: { id: @perfect_project, format: 'svg' }
+    assert_response :success
+    assert_equal contents('badge-gold.svg'), @response.body
+  end
+
+  test 'A perfect unjustified project should have in progress badge' do
     get :badge, params: { id: @perfect_unjustified_project, format: 'svg' }
     assert_response :success
     assert_includes @response.body, 'in progress'
@@ -156,29 +248,29 @@ class ProjectsControllerTest < ActionController::TestCase
 
   test 'Achievement datetimes set' do
     log_in_as(@admin)
-    assert_nil @perfect_project.lost_passing_at
-    assert_nil @perfect_project.achieved_passing_at
+    assert_nil @perfect_passing_project.lost_passing_at
+    assert_not_nil @perfect_passing_project.achieved_passing_at
     patch :update, params: {
-      id: @perfect_project, project: {
+      id: @perfect_passing_project, project: {
         interact_status: 'Unmet'
       }
     }
-    @perfect_project.reload
-    assert_not_nil @perfect_project.lost_passing_at
-    assert @perfect_project.lost_passing_at > 5.minutes.ago.utc
-    assert_nil @perfect_project.achieved_passing_at
+    @perfect_passing_project.reload
+    assert_not_nil @perfect_passing_project.lost_passing_at
+    assert @perfect_passing_project.lost_passing_at > 5.minutes.ago.utc
+    assert_not_nil @perfect_passing_project.achieved_passing_at
     patch :update, params: {
-      id: @perfect_project, project: {
+      id: @perfect_passing_project, project: {
         interact_status: 'Met'
       }
     }
-    assert_not_nil @perfect_project.lost_passing_at
+    assert_not_nil @perfect_passing_project.lost_passing_at
     # These tests should work, but don't; it appears our workaround for
     # the inadequately reset database interferes with them.
-    # assert_not_nil @perfect_project.achieved_passing_at
-    # assert @perfect_project.achieved_passing_at > 5.minutes.ago.utc
-    # assert @perfect_project.achieved_passing_at >
-    #        @perfect_project.lost_passing_at
+    # assert_not_nil @perfect_passing_project.achieved_passing_at
+    # assert @perfect_passing_project.achieved_passing_at > 5.minutes.ago.utc
+    # assert @perfect_passing_project.achieved_passing_at >
+    #        @perfect_passing_project.lost_passing_at
   end
 
   test 'should destroy own project' do
@@ -219,7 +311,7 @@ class ProjectsControllerTest < ActionController::TestCase
     assert_redirected_to project_path(@project)
   end
 
-  test 'should fail to change non-blank repo_url' do
+  test 'should fail to change tail of non-blank repo_url' do
     new_repo_url = @project_two.repo_url + '_new'
     log_in_as(@project_two.user)
     patch :update, params: {
@@ -227,8 +319,24 @@ class ProjectsControllerTest < ActionController::TestCase
         repo_url:  new_repo_url
       }
     }
+    assert_not_empty flash
+    assert_template :edit
     @project_two.reload
     assert_not_equal @project_two.repo_url, new_repo_url
+  end
+
+  test 'should change https to http in non-blank repo_url' do
+    old_repo_url = @project_two.repo_url
+    new_repo_url = 'http://www.nasa.gov/mav'
+    log_in_as(@project_two.user)
+    patch :update, params: {
+      id: @project_two, project: {
+        repo_url:  new_repo_url
+      }
+    }
+    @project_two.reload
+    assert_not_equal @project_two.repo_url, old_repo_url
+    assert_equal @project_two.repo_url, new_repo_url
   end
 
   test 'admin can change other users non-blank repo_url' do
@@ -254,6 +362,21 @@ class ProjectsControllerTest < ActionController::TestCase
     assert_redirected_to 'http://test.host/projects'
   end
 
+  test 'should remove invalid parameter' do
+    get :index, params: { role: 'admin', status: 'passing' }
+    assert_redirected_to 'http://test.host/projects?status=passing'
+  end
+
+  test 'Check ids= projects index query' do
+    get :index, params: {
+      format: :json,
+      ids: "#{@project.id},#{@project_two.id}"
+    }
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal 2, body.length
+  end
+
   test 'should redirect http to https' do
     old = Rails.application.config.force_ssl
     Rails.application.config.force_ssl = true
@@ -263,7 +386,7 @@ class ProjectsControllerTest < ActionController::TestCase
   end
 
   test 'sanity test of reminders' do
-    result = ProjectsController.send_reminders
+    result = ProjectsController.send :send_reminders
     assert_equal 1, result.size
   end
 end

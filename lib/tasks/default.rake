@@ -1,10 +1,15 @@
 # frozen_string_literal: true
+
 # Rake tasks for BadgeApp
 
-task(:default).clear.enhance %w(
+require 'json'
+
+task(:default).clear.enhance %w[
   rbenv_rvm_setup
   bundle
+  bundle_doctor
   bundle_audit
+  generate_criteria_doc
   rubocop
   markdownlint
   rails_best_practices
@@ -14,21 +19,23 @@ task(:default).clear.enhance %w(
   whitespace_check
   yaml_syntax_check
   html_from_markdown
-  fasterer
   eslint
   test
-)
+]
+# Temporarily removed fasterer
+# Waiting for Ruby 2.4 support: https://github.com/seattlerb/ruby_parser/issues/239
 
-task(:ci).clear.enhance %w(
+task(:ci).clear.enhance %w[
   rbenv_rvm_setup
+  bundle_doctor
   bundle_audit
   markdownlint
   license_okay
   license_finder_report.html
   whitespace_check
   yaml_syntax_check
-  fasterer
-)
+]
+# Temporarily removed fasterer
 
 # Simple smoke test to avoid development environment misconfiguration
 desc 'Ensure that rbenv or rvm are set up in PATH'
@@ -41,13 +48,13 @@ end
 
 desc 'Run Rubocop with options'
 task :rubocop do
-  sh 'bundle exec rubocop -D --format offenses --format progress || true'
+  sh 'bundle exec rubocop -D --format offenses --format progress'
 end
 
 desc 'Run rails_best_practices with options'
 task :rails_best_practices do
   sh 'bundle exec rails_best_practices ' \
-      '--features --spec --without-color || true'
+      '--features --spec --without-color'
 end
 
 desc 'Run brakeman'
@@ -60,6 +67,12 @@ task :bundle do
   sh 'bundle check || bundle install'
 end
 
+desc 'Run bundle doctor - check for some Ruby gem configuration problems'
+task :bundle_doctor do
+  sh 'bundle doctor'
+end
+
+# rubocop: disable Metrics/BlockLength
 desc 'Run bundle-audit - check for known vulnerabilities in dependencies'
 task :bundle_audit do
   verbose(true) do
@@ -92,8 +105,11 @@ task :bundle_audit do
     END
   end
 end
+# rubocop: enable Metrics/BlockLength
 
-desc 'Run markdownlint (mdl) - check for markdown problems'
+# Note: If you don't want mdl to be run on a markdown file, rename it to
+# end in ".markdown" instead.  (E.g., for markdown fragments.)
+desc 'Run markdownlint (mdl) - check for markdown problems on **.md files'
 task :markdownlint do
   style_file = 'config/markdown_style.rb'
   sh "bundle exec mdl -s #{style_file} *.md doc/*.md"
@@ -189,26 +205,68 @@ markdown_files = Rake::FileList.new('*.md', 'doc/*.md')
 # Use this task to locally generate HTML files from .md (markdown)
 task 'html_from_markdown' => markdown_files.ext('.html')
 
+file 'doc/criteria.md' =>
+     [
+       'criteria/criteria.yml',
+       'doc/criteria-header.markdown', 'doc/criteria-footer.markdown',
+       './gen_markdown.rb'
+     ] do
+  sh './gen_markdown.rb'
+end
+
+# Name task so we don't have to use the filename
+task generate_criteria_doc: 'doc/criteria.md' do
+end
+
 desc 'Use fasterer to report Ruby constructs that perform poorly'
 task :fasterer do
   sh 'fasterer'
 end
 
-# Implement full purge of Fastly CDN cache.  Invoke using:
-#   heroku run --app HEROKU_APP_HERE rake fastly:purge
-# Run this if code changes will cause a change in badge level, since otherwise
-# the old badge levels will keep being displayed until the cache times out.
-# See: https://robots.thoughtbot.com/
-# a-guide-to-caching-your-rails-application-with-fastly
+# rubocop: disable Metrics/BlockLength
+# Tasks for Fastly including purging and testing the cache.
 namespace :fastly do
+  # Implement full purge of Fastly CDN cache.  Invoke using:
+  #   heroku run --app HEROKU_APP_HERE rake fastly:purge
+  # Run this if code changes will cause a change in badge level, since otherwise
+  # the old badge levels will keep being displayed until the cache times out.
+  # See: https://robots.thoughtbot.com/
+  # a-guide-to-caching-your-rails-application-with-fastly
   desc 'Purge Fastly cache (takes about 5s)'
   task :purge do
     puts 'Starting full purge of Fastly cache (typically takes about 5s)'
-    require Rails.root.join('config/initializers/fastly')
+    require Rails.root.join('config', 'initializers', 'fastly')
     FastlyRails.client.get_service(ENV.fetch('FASTLY_SERVICE_ID')).purge_all
     puts 'Cache purged'
   end
+
+  desc 'Test Fastly Caching'
+  task :test, [:site_name] do |_t, args|
+    args.with_defaults site_name:
+      'https://master.bestpractices.coreinfrastructure.org/projects/1/badge'
+    puts 'Starting test of Fastly caching'
+    verbose(false) do
+      sh <<-END
+        site_name="#{args.site_name}"
+        echo "Purging Fastly cache of badge for ${site_name}"
+        curl -X PURGE "$site_name" || exit 1
+        if curl -svo /dev/null "$site_name" 2>&1 | grep 'X-Cache: MISS' ; then
+          echo "Fastly cache of badge for project 1 successfully purged."
+        else
+          echo "Failed to purge badge for project 1 from Fastly cache."
+          exit 1
+        fi
+        if curl -svo /dev/null "$site_name" 2>&1 | grep 'X-Cache: HIT' ; then
+          echo "Fastly cache successfully restored."
+        else
+          echo "Fastly failed to restore cache."
+          exit 1
+        fi
+      END
+    end
+  end
 end
+# rubocop: enable Metrics/BlockLength
 
 desc 'Drop development database'
 task :drop_database do
@@ -256,7 +314,8 @@ desc 'Copy production database to master, overwriting master database'
 task :production_to_master do
   sh 'heroku pg:backups:restore $(heroku pg:backups:public-url ' \
      '--app production-bestpractices) DATABASE_URL --app master-bestpractices'
-  sh 'heroku run bundle exec rake db:migrate --app master-bestpractices'
+  sh 'heroku run:detached bundle exec rake db:migrate ' \
+     '--app master-bestpractices'
 end
 
 desc 'Copy production database to staging, overwriting staging database'
@@ -264,7 +323,8 @@ task :production_to_staging do
   sh 'heroku pg:backups:restore $(heroku pg:backups:public-url ' \
      '--app production-bestpractices) DATABASE_URL ' \
      '--app staging-bestpractices --confirm staging-bestpractices'
-  sh 'heroku run bundle exec rake db:migrate --app staging-bestpractices'
+  sh 'heroku run:detached bundle exec rake db:migrate ' \
+     '--app staging-bestpractices'
 end
 
 # require 'rails/testtask.rb'
@@ -304,6 +364,51 @@ task :fake_production do
   sh 'RAILS_ENV=fake_production rails server -p 4000'
 end
 
+# Remove trailing whitespace after running "translation:sync".
+# The "translation:sync" task syncs up the translations, but uses the usual
+# YAML writer, which writes out trailing whitespace.  It should not do that,
+# and the trailing whitespace causes later failures in testing.
+# Problem already reported:
+# - https://github.com/aurels/translation-gem/issues/13
+# - https://github.com/yaml/libyaml/issues/46
+# We will run this enhancement to solve the problem.
+# Only do this in development, since the gem only exists then.
+if Rails.env.development?
+  Rake::Task['translation:sync'].enhance do
+    puts 'Removing bogus trailing whitespace (bug workaround).'
+    sh "cd config/locales/ && sed -i -e 's/ $//' *.yml && cd ../.."
+  end
+end
+
+# Convert project.json -> project.sql (a command to re-insert data).
+# This only *generates* a SQL command; I did it this way so that it's easy
+# to check the command to be run *before* executing it, and this also makes
+# it easy to separately determine the database to apply the command to.
+# Note that this depends on non-standard PostgreSQL extensions.
+desc 'Convert file "project.json" into SQL insertion command in "project.sql".'
+task :create_project_insertion_command do
+  puts 'Reading file project.json (this uses PostgreSQL extensions)'
+  file_contents = File.read('project.json')
+  data_hash = JSON.parse(file_contents)
+  project_id = data_hash['id']
+  puts "Inserting project id #{project_id}"
+  # Escape JSON using SQL escape ' -> '', so we can use it in a SQL command
+  escaped_json = "'" + file_contents.gsub(/'/, "''") + "'"
+  sql_command = 'insert into projects select * from ' \
+                "json_populate_record(NULL::projects, #{escaped_json});"
+  File.write('project.sql', sql_command)
+  puts 'File project.sql created. To use this, do the following (examples):'
+  puts 'Local:  rails db < project.sql'
+  puts 'Remote: heroku pg:psql --app production-bestpractices < project.sql'
+end
+
+# Use this if the badge rules change.  This will email those who
+# gain/lose a badge because of the changes.
+desc 'Run to recalculate all badge percentages for all projects'
+task :update_all_badge_percentages do
+  Project.update_all_badge_percentages
+end
+
 Rake::Task['test:run'].enhance ['test:features']
 
 # This is the task to run every day, e.g., to record statistics
@@ -312,6 +417,8 @@ Rake::Task['test:run'].enhance ['test:features']
 desc 'Run daily tasks used in any tier, e.g., record daily statistics'
 task daily: :environment do
   ProjectStat.create!
+  day_for_monthly = (ENV['BADGEAPP_DAY_FOR_MONTHLY'] || '5').to_i
+  Rake::Task['monthly'].invoke if Time.now.utc.day == day_for_monthly
 end
 
 # Run this task to email a limited set of reminders to inactive projects
@@ -321,6 +428,32 @@ end
 desc 'Send reminders to the oldest inactive project badge entries.'
 task reminders: :environment do
   puts 'Sending inactive project reminders. List of reminded project ids:'
-  p ProjectsController.send_reminders
+  p ProjectsController.send :send_reminders
   true
+end
+
+desc 'Send monthly announcement of passing projects'
+task monthly_announcement: :environment do
+  puts 'Sending monthly announcement. List of reminded project ids:'
+  p ProjectsController.send :send_monthly_announcement
+  true
+end
+
+desc 'Run monthly tasks (called from "daily")'
+task monthly: %i[environment monthly_announcement] do
+end
+
+# Run this task periodically if we want to test the
+# install-badge-dev-environment script
+desc 'check that install-badge-dev-environment works'
+task :test_dev_install do
+  puts 'Updating test-dev-install branch'
+  sh <<-END
+    git checkout test-dev-install
+    git merge --no-commit master
+    git checkout HEAD circle.yml
+    git commit -a -s -m "Merge master into test-dev-install"
+    git push origin test-dev-install
+    git checkout master
+  END
 end

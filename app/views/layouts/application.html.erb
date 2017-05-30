@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html>
+<html lang="<%= I18n.locale %>">
 <head>
   <meta charset="utf-8">
-  <title>BadgeApp</title>
-  <meta name=viewport content="width=device-width, initial-scale=1">
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BadgeApp</title>
   <%= favicon_link_tag %>
-  <%= stylesheet_link_tag    'application', media: 'all', 'data-turbolinks-track' => true %>
-  <%= javascript_include_tag 'application', 'data-turbolinks-track' => true %>
-  <%= auto_discovery_link_tag :atom, { controller: 'projects', action: 'feed' }, { title: 'CII Best Practices BadgeApp Updated Projects' } %>
+  <%= stylesheet_link_tag    'application', media: 'all' %>
+  <%= javascript_include_tag 'application', defer: true %>
+  <%= auto_discovery_link_tag :atom, { controller: 'projects', action: 'feed' }, { title: t('feed_title') } %>
   <%= csrf_meta_tags %>
 </head>
 <body>

@@ -1,4 +1,3 @@
-# encoding: UTF-8
 # This file is auto-generated from the current state of the database. Instead
 # of editing this file, please use the migrations feature of Active Record to
 # incrementally modify your database, and then regenerate this schema definition.
@@ -11,12 +10,12 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 20161102170815) do
+ActiveRecord::Schema.define(version: 20170526180109) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
-  enable_extension "pg_stat_statements"
   enable_extension "citext"
+  enable_extension "pg_stat_statements"
 
   create_table "pg_search_documents", force: :cascade do |t|
     t.text     "content"
@@ -24,9 +23,8 @@ ActiveRecord::Schema.define(version: 20161102170815) do
     t.string   "searchable_type"
     t.datetime "created_at",      null: false
     t.datetime "updated_at",      null: false
+    t.index ["searchable_type", "searchable_id"], name: "index_pg_search_documents_on_searchable_type_and_searchable_id", using: :btree
   end
-
-  add_index "pg_search_documents", ["searchable_type", "searchable_id"], name: "index_pg_search_documents_on_searchable_type_and_searchable_id", using: :btree
 
   create_table "project_stats", force: :cascade do |t|
     t.integer  "percent_ge_0",                           null: false
@@ -46,9 +44,8 @@ ActiveRecord::Schema.define(version: 20161102170815) do
     t.integer  "projects_edited"
     t.integer  "active_edited_projects"
     t.integer  "active_edited_in_progress"
+    t.index ["created_at"], name: "index_project_stats_on_created_at", using: :btree
   end
-
-  add_index "project_stats", ["created_at"], name: "index_project_stats_on_created_at", using: :btree
 
   create_table "projects", force: :cascade do |t|
     t.integer  "user_id"
@@ -213,24 +210,129 @@ ActiveRecord::Schema.define(version: 20161102170815) do
     t.text     "installation_common_justification"
     t.string   "build_reproducible_status",                            default: "?"
     t.text     "build_reproducible_justification"
-    t.integer  "badge_percentage"
+    t.integer  "badge_percentage_0"
     t.datetime "achieved_passing_at"
     t.datetime "lost_passing_at"
     t.datetime "last_reminder_at"
     t.boolean  "disabled_reminders",                                   default: false, null: false
+    t.string   "implementation_languages",                             default: ""
+    t.integer  "lock_version",                                         default: 0
+    t.integer  "badge_percentage_1",                                   default: 0
+    t.string   "dco_status",                                           default: "?"
+    t.text     "dco_justification"
+    t.string   "governance_status",                                    default: "?"
+    t.text     "governance_justification"
+    t.string   "code_of_conduct_status",                               default: "?"
+    t.text     "code_of_conduct_justification"
+    t.string   "roles_responsibilities_status",                        default: "?"
+    t.text     "roles_responsibilities_justification"
+    t.string   "access_continuity_status",                             default: "?"
+    t.text     "access_continuity_justification"
+    t.string   "bus_factor_status",                                    default: "?"
+    t.text     "bus_factor_justification"
+    t.string   "documentation_roadmap_status",                         default: "?"
+    t.text     "documentation_roadmap_justification"
+    t.string   "documentation_architecture_status",                    default: "?"
+    t.text     "documentation_architecture_justification"
+    t.string   "documentation_security_status",                        default: "?"
+    t.text     "documentation_security_justification"
+    t.string   "documentation_quick_start_status",                     default: "?"
+    t.text     "documentation_quick_start_justification"
+    t.string   "documentation_current_status",                         default: "?"
+    t.text     "documentation_current_justification"
+    t.string   "documentation_achievements_status",                    default: "?"
+    t.text     "documentation_achievements_justification"
+    t.string   "accessibility_best_practices_status",                  default: "?"
+    t.text     "accessibility_best_practices_justification"
+    t.string   "internationalization_status",                          default: "?"
+    t.text     "internationalization_justification"
+    t.string   "sites_password_security_status",                       default: "?"
+    t.text     "sites_password_security_justification"
+    t.string   "maintenance_or_update_status",                         default: "?"
+    t.text     "maintenance_or_update_justification"
+    t.string   "vulnerability_report_credit_status",                   default: "?"
+    t.text     "vulnerability_report_credit_justification"
+    t.string   "vulnerability_response_process_status",                default: "?"
+    t.text     "vulnerability_response_process_justification"
+    t.string   "coding_standards_status",                              default: "?"
+    t.text     "coding_standards_justification"
+    t.string   "coding_standards_enforced_status",                     default: "?"
+    t.text     "coding_standards_enforced_justification"
+    t.string   "build_standard_variables_status",                      default: "?"
+    t.text     "build_standard_variables_justification"
+    t.string   "build_preserve_debug_status",                          default: "?"
+    t.text     "build_preserve_debug_justification"
+    t.string   "build_non_recursive_status",                           default: "?"
+    t.text     "build_non_recursive_justification"
+    t.string   "build_repeatable_status",                              default: "?"
+    t.text     "build_repeatable_justification"
+    t.string   "installation_standard_variables_status",               default: "?"
+    t.text     "installation_standard_variables_justification"
+    t.string   "installation_development_quick_status",                default: "?"
+    t.text     "installation_development_quick_justification"
+    t.string   "external_dependencies_status",                         default: "?"
+    t.text     "external_dependencies_justification"
+    t.string   "dependency_monitoring_status",                         default: "?"
+    t.text     "dependency_monitoring_justification"
+    t.string   "updateable_reused_components_status",                  default: "?"
+    t.text     "updateable_reused_components_justification"
+    t.string   "interfaces_current_status",                            default: "?"
+    t.text     "interfaces_current_justification"
+    t.string   "automated_integration_testing_status",                 default: "?"
+    t.text     "automated_integration_testing_justification"
+    t.string   "regression_tests_added50_status",                      default: "?"
+    t.text     "regression_tests_added50_justification"
+    t.string   "test_statement_coverage80_status",                     default: "?"
+    t.text     "test_statement_coverage80_justification"
+    t.string   "test_policy_mandated_status",                          default: "?"
+    t.text     "test_policy_mandated_justification"
+    t.string   "implement_secure_design_status",                       default: "?"
+    t.text     "implement_secure_design_justification"
+    t.string   "input_validation_status",                              default: "?"
+    t.text     "input_validation_justification"
+    t.string   "crypto_algorithm_agility_status",                      default: "?"
+    t.text     "crypto_algorithm_agility_justification"
+    t.string   "crypto_credential_agility_status",                     default: "?"
+    t.text     "crypto_credential_agility_justification"
+    t.string   "signed_releases_status",                               default: "?"
+    t.text     "signed_releases_justification"
+    t.string   "version_tags_signed_status",                           default: "?"
+    t.text     "version_tags_signed_justification"
+    t.integer  "badge_percentage_2",                                   default: 0
+    t.string   "contributors_unassociated_status",                     default: "?"
+    t.text     "contributors_unassociated_justification"
+    t.string   "copyright_per_file_status",                            default: "?"
+    t.text     "copyright_per_file_justification"
+    t.string   "license_per_file_status",                              default: "?"
+    t.text     "license_per_file_justification"
+    t.string   "small_tasks_status",                                   default: "?"
+    t.text     "small_tasks_justification"
+    t.string   "require_2FA_status",                                   default: "?"
+    t.text     "require_2FA_justification"
+    t.string   "secure_2FA_status",                                    default: "?"
+    t.text     "secure_2FA_justification"
+    t.string   "code_review_standards_status",                         default: "?"
+    t.text     "code_review_standards_justification"
+    t.string   "two_person_review_status",                             default: "?"
+    t.text     "two_person_review_justification"
+    t.string   "test_statement_coverage90_status",                     default: "?"
+    t.text     "test_statement_coverage90_justification"
+    t.string   "test_branch_coverage80_status",                        default: "?"
+    t.text     "test_branch_coverage80_justification"
+    t.string   "security_review_status",                               default: "?"
+    t.text     "security_review_justification"
+    t.index ["achieved_passing_at"], name: "index_projects_on_achieved_passing_at", using: :btree
+    t.index ["badge_percentage_0"], name: "index_projects_on_badge_percentage_0", using: :btree
+    t.index ["created_at"], name: "index_projects_on_created_at", using: :btree
+    t.index ["homepage_url"], name: "index_projects_on_homepage_url", using: :btree
+    t.index ["last_reminder_at"], name: "index_projects_on_last_reminder_at", using: :btree
+    t.index ["lost_passing_at"], name: "index_projects_on_lost_passing_at", using: :btree
+    t.index ["name"], name: "index_projects_on_name", using: :btree
+    t.index ["repo_url"], name: "index_projects_on_repo_url", using: :btree
+    t.index ["updated_at"], name: "index_projects_on_updated_at", using: :btree
+    t.index ["user_id", "created_at"], name: "index_projects_on_user_id_and_created_at", using: :btree
+    t.index ["user_id"], name: "index_projects_on_user_id", using: :btree
   end
-
-  add_index "projects", ["achieved_passing_at"], name: "index_projects_on_achieved_passing_at", using: :btree
-  add_index "projects", ["badge_percentage"], name: "index_projects_on_badge_percentage", using: :btree
-  add_index "projects", ["created_at"], name: "index_projects_on_created_at", using: :btree
-  add_index "projects", ["homepage_url"], name: "index_projects_on_homepage_url", using: :btree
-  add_index "projects", ["last_reminder_at"], name: "index_projects_on_last_reminder_at", using: :btree
-  add_index "projects", ["lost_passing_at"], name: "index_projects_on_lost_passing_at", using: :btree
-  add_index "projects", ["name"], name: "index_projects_on_name", using: :btree
-  add_index "projects", ["repo_url"], name: "index_projects_on_repo_url", using: :btree
-  add_index "projects", ["updated_at"], name: "index_projects_on_updated_at", using: :btree
-  add_index "projects", ["user_id", "created_at"], name: "index_projects_on_user_id_and_created_at", using: :btree
-  add_index "projects", ["user_id"], name: "index_projects_on_user_id", using: :btree
 
   create_table "users", force: :cascade do |t|
     t.string   "provider"
@@ -250,10 +352,10 @@ ActiveRecord::Schema.define(version: 20161102170815) do
     t.datetime "activated_at"
     t.string   "reset_digest"
     t.datetime "reset_sent_at"
+    t.string   "preferred_locale",  default: "en"
+    t.index ["email"], name: "index_users_on_email", using: :btree
+    t.index ["uid"], name: "index_users_on_uid", using: :btree
   end
-
-  add_index "users", ["email"], name: "index_users_on_email", using: :btree
-  add_index "users", ["uid"], name: "index_users_on_uid", using: :btree
 
   create_table "versions", force: :cascade do |t|
     t.string   "item_type",  null: false
@@ -262,9 +364,8 @@ ActiveRecord::Schema.define(version: 20161102170815) do
     t.string   "whodunnit"
     t.text     "object"
     t.datetime "created_at"
+    t.index ["item_type", "item_id"], name: "index_versions_on_item_type_and_item_id", using: :btree
   end
-
-  add_index "versions", ["item_type", "item_id"], name: "index_versions_on_item_type_and_item_id", using: :btree
 
   add_foreign_key "projects", "users"
 end

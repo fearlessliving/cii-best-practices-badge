@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 # rubocop:disable Metrics/BlockLength
 Rails.application.configure do
   # Settings specified here will take precedence over those in
@@ -16,6 +17,7 @@ Rails.application.configure do
   # Full error reports are disabled and caching is turned on.
   config.consider_all_requests_local       = false
   config.action_controller.perform_caching = true
+  config.cache_store = :memory_store, { size: 64.megabytes }
 
   # Enable Rack::Cache to put a simple HTTP cache in front of your application
   # Add `rack-cache` to your Gemfile before enabling this.
@@ -25,7 +27,8 @@ Rails.application.configure do
 
   # Disable serving static files from the `/public` folder by default since
   # Apache or NGINX already handles this.
-  config.serve_static_files = ENV['RAILS_SERVE_STATIC_FILES'].present?
+  # config.serve_static_files = ENV['RAILS_SERVE_STATIC_FILES'].present?
+  config.public_file_server.enabled = ENV['RAILS_SERVE_STATIC_FILES'].present?
 
   # We want to serve compressed values
   config.assets.compress = true
@@ -50,7 +53,7 @@ Rails.application.configure do
 
   # Force all access to the app over SSL, use Strict-Transport-Security, and use
   # secure cookies.
-  config.force_ssl = true
+  config.force_ssl = true unless ENV['DISABLE_FORCE_SSL']
 
   # Use the lowest log level to ensure availability of diagnostic information
   # when problems arise.
@@ -105,9 +108,41 @@ Rails.application.configure do
   # The documentation for Fastly suggests setting
   # "config.serve_static_assets = true".  However, this has since been
   # renamed to "config.serve_static_files", which we already conditionally set.
-  # Cache static content.  Until we're confident in the results, we'll
-  # use a relatively short caching time of 1 hour.
-  # config.static_cache_control = 'public, s-maxage=2592000, maxage=86400'
-  config.static_cache_control = 'public, s-maxage=3600, maxage=3600'
+
+  # Cache static content.  Cache for a long time; the asset cache is
+  config.public_file_server.headers =
+    {
+      'Cache-Control' =>
+        'public, s-maxage=31536000, max-age=31536000, immutable'
+    }
+
+  # Enable Rack's built-in compression mechanism; this is important for people
+  # with slow network connections
+  config.middleware.use Rack::Deflater
+
+  # In production and fake_production environments turn on "lograge".
+  # This makes the logs easier to read and removes cruft that, while useful
+  # in development, can be overwhelming in production.
+  config.lograge.enabled = true
+
+  # As a failsafe, trigger an exception if the response just hangs for
+  # too long.  We only do this in production, because it's not
+  # supposed to happen in normal use - this is simply an automatic
+  # recovery mechanism if things get stuck.  We don't do this in test or
+  # development, because it interferes with their purposes.
+  # The "use" form is preferred, but it doesn't actually work when placed
+  # in this file, so we'll just set the timeout directly.
+  # Ignore exceptions - in fake_production this will fail.  That's good,
+  # because we do *not* want timeouts during a debug session.
+  # rubocop:disable Lint/HandleExceptions
+  begin
+    Rack::Timeout.service_timeout = 30 # seconds
+    # The timeout reports are really noisy, and don't seem to help debug
+    # typical problems (if anything they get in the way).  Disable them.
+    Rack::Timeout.unregister_state_change_observer(:logger)
+  rescue NameError
+    # Do nothing if it's unavailable (this happens if we didn't load the gem)
+  end
+  # rubocop:enable Lint/HandleExceptions
 end
 # rubocop:enable Metrics/BlockLength

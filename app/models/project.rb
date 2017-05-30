@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 # rubocop:disable Metrics/ClassLength
 class Project < ActiveRecord::Base
   using StringRefinements
@@ -6,26 +7,21 @@ class Project < ActiveRecord::Base
 
   include PgSearch # PostgreSQL-specific text search
 
-  BADGE_STATUSES = [
-    ['All', nil],
-    ['Passing (100%)', 100],
-    ['In Progress (25% or more)', 25],
-    ['In Progress (50% or more)', 50],
-    ['In Progress (75% or more)', 75],
-    ['In Progress (90% or more)', 90]
-  ].freeze
-  STATUS_CHOICE = %w(? Met Unmet).freeze
-  STATUS_CHOICE_NA = (STATUS_CHOICE + %w(N/A)).freeze
+  STATUS_CHOICE = %w[? Met Unmet].freeze
+  STATUS_CHOICE_NA = (STATUS_CHOICE + %w[N/A]).freeze
   MIN_SHOULD_LENGTH = 5
   MAX_TEXT_LENGTH = 8192 # Arbitrary maximum to reduce abuse
   MAX_SHORT_STRING_LENGTH = 254 # Arbitrary maximum to reduce abuse
 
-  PROJECT_OTHER_FIELDS = %i(
-    name description homepage_url cpe
-    license general_comments user_id disabled_reminders
-  ).freeze
-  ALL_CRITERIA_STATUS = Criteria.map { |c| c.name.status }.freeze
-  ALL_CRITERIA_JUSTIFICATION = Criteria.map { |c| c.name.justification }.freeze
+  BADGE_LEVELS = %w[in_progress passing silver gold].freeze
+
+  PROJECT_OTHER_FIELDS = %i[
+    name description homepage_url repo_url cpe implementation_languages
+    license general_comments user_id disabled_reminders lock_version
+    level
+  ].freeze
+  ALL_CRITERIA_STATUS = Criteria.all.map(&:status).freeze
+  ALL_CRITERIA_JUSTIFICATION = Criteria.all.map(&:justification).freeze
   PROJECT_PERMITTED_FIELDS = (PROJECT_OTHER_FIELDS + ALL_CRITERIA_STATUS +
                               ALL_CRITERIA_JUSTIFICATION).freeze
 
@@ -39,23 +35,46 @@ class Project < ActiveRecord::Base
 
   scope :gteq, (
     lambda do |floor|
-      where(Project.arel_table[:badge_percentage].gteq(floor.to_i))
+      where(Project.arel_table[:badge_percentage_0].gteq(floor.to_i))
     end
   )
 
+  # TODO: re-enable this in rubocop > 0.48.1.
+  #       This is erroneous and been fixed in the upstream
+  #       version of rubocop see bbatso/rubocop PR #4237.
+  # rubocop:disable Lint/AmbiguousBlockAssociation
   scope :in_progress, -> { lteq(99) }
 
   scope :lteq, (
     lambda do |ceiling|
-      where(Project.arel_table[:badge_percentage].lteq(ceiling.to_i))
+      where(Project.arel_table[:badge_percentage_0].lteq(ceiling.to_i))
     end
   )
 
   scope :passing, -> { gteq(100) }
+  # rubocop:enable Lint/AmbiguousBlockAssociation
 
   scope :recently_updated, (
     lambda do
-      unscoped.limit(50).order(updated_at: :desc, id: :asc).eager_load(:user)
+      # The "includes" here isn't ideal.
+      # Originally we used "eager_load" on :user, but
+      # "eager_load" forces a load of *all* fields per a bug in Rails:
+      # https://github.com/rails/rails/issues/15185
+      # Switching to ".includes" fixes the bug, though it means we do 2
+      # database queries instead of just one.
+      # We could use the gem "rails_select_on_includes" to fix this bug:
+      # https://github.com/alekseyl/rails_select_on_includes
+      # but that's something of a hack.
+      # If a totally-cached feed is used, then the development environment
+      # will complain as follows:
+      # GET /feed
+      # AVOID eager loading detected
+      #   Project => [:user]
+      #   Remove from your finder: :includes => [:user]
+      # However, you *cannot* simply remove the includes, because
+      # when the feed is *not* completely cached, the code *does* need
+      # this user data.
+      limit(50).reorder(updated_at: :desc, id: :asc).includes(:user)
     end
   )
 
@@ -78,7 +97,7 @@ class Project < ActiveRecord::Base
   # https://github.com/Casecommons/pg_search
   pg_search_scope(
     :search_for,
-    against: %i(name homepage_url repo_url description)
+    against: %i[name homepage_url repo_url description]
     # using: { tsearch: { any_word: true } }
   )
 
@@ -92,7 +111,7 @@ class Project < ActiveRecord::Base
   # We'll also record previous versions of information:
   has_paper_trail
 
-  before_save :update_badge_percentage
+  before_save :update_badge_percentages
 
   # A project is associated with a user
   belongs_to :user
@@ -101,9 +120,13 @@ class Project < ActiveRecord::Base
 
   # For these fields we'll have just simple validation rules.
   # We'll rely on Rails' HTML escaping system to counter XSS.
-  validates :name, length: { maximum: MAX_SHORT_STRING_LENGTH }
-  validates :description, length: { maximum: MAX_TEXT_LENGTH }
-  validates :license, length: { maximum: MAX_SHORT_STRING_LENGTH }
+  validates :name, length: { maximum: MAX_SHORT_STRING_LENGTH },
+                   text: true
+  validates :description, length: { maximum: MAX_TEXT_LENGTH },
+                          text: true
+  validates :license, length: { maximum: MAX_SHORT_STRING_LENGTH },
+                      text: true
+  validates :general_comments, text: true
 
   # We'll do automated analysis on these URLs, which means we will *download*
   # from URLs provided by untrusted users.  Thus we'll add additional
@@ -117,30 +140,52 @@ class Project < ActiveRecord::Base
             length: { maximum: MAX_SHORT_STRING_LENGTH }
   validate :need_a_base_url
 
+  # Comma-separated list.  This is very generous in what characters it
+  # allows in a programming language name, but restricts it to ASCII and omits
+  # problematic characters that are very unlikely in a name like
+  # <, >, &, ", brackets, and braces.  This handles language names like
+  # JavaScript, C++, C#, D-, and PL/I.  A space is optional after a comma.
+  VALID_LANGUAGE_LIST = %r{\A(|-|
+                          ([A-Za-z0-9!\#$%'()*+.\/\:;=?@\[\]^~-]+
+                            (,\ ?[A-Za-z0-9!\#$%'()*+.\/\:;=?@\[\]^~-]+)*))\Z}x
+  validates :implementation_languages,
+            length: { maximum: MAX_SHORT_STRING_LENGTH },
+            format: {
+              with: VALID_LANGUAGE_LIST,
+              message: 'Must a comma-separated list of names'
+            }
+
   validates :cpe,
             length: { maximum: MAX_SHORT_STRING_LENGTH },
             format: { with: /\A(cpe:.*)?\Z/, message: 'Must begin with cpe:' }
 
   validates :user_id, presence: true
 
-  # Validate all of the criteria-related inputs
-  Criteria.each do |criterion|
-    if criterion.na_allowed?
-      validates criterion.name.status, inclusion: { in: STATUS_CHOICE_NA }
-    else
-      validates criterion.name.status, inclusion: { in: STATUS_CHOICE }
+  Criteria.each do |_level, criteria|
+    criteria.each do |_name, criterion|
+      if criterion.na_allowed?
+        validates criterion.name.status, inclusion: { in: STATUS_CHOICE_NA }
+      else
+        validates criterion.name.status, inclusion: { in: STATUS_CHOICE }
+      end
+      validates criterion.name.justification,
+                length: { maximum: MAX_TEXT_LENGTH },
+                text: true
     end
-    validates criterion.name.justification, length: { maximum: MAX_TEXT_LENGTH }
   end
 
+  # Return string representing badge level; assumes badge_percentage correct.
   def badge_level
-    return 'passing' if all_active_criteria_passing?
-    'in_progress'
+    BADGE_LEVELS.each_with_index do |level, index|
+      return level if index == Criteria.count
+      return level if self["badge_percentage_#{index}".to_sym] < 100
+    end
   end
 
-  def calculate_badge_percentage
-    met = Criteria.active.count { |criterion| passing? criterion }
-    to_percentage met, Criteria.active.length
+  def calculate_badge_percentage(level)
+    active = Criteria.active(level)
+    met = active.count { |criterion| enough?(criterion) }
+    to_percentage met, active.size
   end
 
   # Does this contain a URL *anywhere* in the (justification) text?
@@ -159,19 +204,115 @@ class Project < ActiveRecord::Base
     text =~ %r{https?://[^ ]{5}}
   end
 
+  # Returns a symbol indicating a the status of an particular criterion
+  # in a project.  These are:
+  # :criterion_passing -
+  #   'Met' (or 'N/A' if applicable) has been selected for the criterion
+  #   and all requred justification text (including url's) have been entered  #
+  # :criterion_failing -
+  #   'Unmet' has been selected for a MUST criterion'.
+  # :criterion_barely -
+  #   'Unmet' has been selected for a SHOULD or SUGGESTED criterion and
+  #   ,if SHOULD, required justification text has been entered.
+  # :criterion_url_required -
+  #   'Met' has been selected, but a required url in the justification
+  #   text is missing.
+  # :criterion_justification_required -
+  #   Required justification for 'Met', 'N/A' or 'Unmet' selection is missing.
+  # :criterion_unknown -
+  #   The criterion has been left at it's default value and thus the status
+  #   is unknown.
+  # This method is mirrored in assets/project-form.js as getCriterionResult
+  # If you change this method, change getCriterionResult accordingly.
+  def get_criterion_result(criterion)
+    status = self[criterion.name.status]
+    justification = self[criterion.name.justification]
+    return :criterion_unknown if status.unknown?
+    return get_met_result(criterion, justification) if status.met?
+    return get_unmet_result(criterion, justification) if status.unmet?
+    get_na_result(criterion, justification)
+  end
+
+  def get_satisfaction_data(level, panel)
+    total =
+      Criteria[level].values.select do |criterion|
+        criterion.major.downcase.delete(' ') == panel
+      end
+    passing = total.count { |criterion| enough?(criterion) }
+    {
+      text: "#{passing}/#{total.size}",
+      color: get_color(passing / [1, total.size.to_f].max)
+    }
+  end
+
+  # Flash a message to update static_analysis if the user is updating
+  # for the first time since we added met_justification_required that
+  # criterion
+  STATIC_ANALYSIS_JUSTIFICATION_REQUIRED_DATE =
+    DateTime.iso8601('2017-04-25T00:00Z')
+  def notify_for_static_analysis?(level)
+    status = self[Criteria[level][:static_analysis].name.status]
+    result = get_criterion_result(Criteria[level][:static_analysis])
+    updated_at < STATIC_ANALYSIS_JUSTIFICATION_REQUIRED_DATE &&
+      status.met? && result == :criterion_justification_required
+  end
+
+  # Send owner an email they add a new project.
+  def send_new_project_email
+    ReportMailer.email_new_project_owner(self).deliver_now
+  end
+
+  # Return true if we should show an explicit license for the data.
+  # Old entries did not set a license; we only want to show entry licenses
+  # if the updated_at field indicates there was agreement to it.
+  ENTRY_LICENSE_EXPLICIT_DATE = DateTime.iso8601('2017-02-20T12:00Z')
+  def show_entry_license?
+    updated_at >= ENTRY_LICENSE_EXPLICIT_DATE
+  end
+
   # Update the badge percentage, and update relevant event datetime if needed.
   # This code will need to changed if there are multiple badge levels, or
   # if there are more than 100 criteria. (If > 100 criteria, switch
   # percentage to something like millipercentage.)
-  def update_badge_percentage
-    old_badge_percentage = badge_percentage
-    self.badge_percentage = calculate_badge_percentage
-    if badge_percentage == 100 && old_badge_percentage < 100
-      self.achieved_passing_at = Time.now.utc
-    elsif badge_percentage < 100 && old_badge_percentage == 100
-      self.lost_passing_at = Time.now.utc
+  def update_badge_percentages
+    Criteria.keys.each do |level|
+      old_badge_percentage = self["badge_percentage_#{level}".to_sym]
+      self["badge_percentage_#{level}".to_sym] =
+        calculate_badge_percentage(level)
+      update_passing_times(old_badge_percentage) if level == '0'
     end
   end
+
+  # Return owning user's name for purposes of display.
+  def user_display_name
+    user_name || user_nickname
+  end
+
+  # Update badge percentages for all project entries, and send emails
+  # to any project where this causes loss or gain of a badge.
+  # Use this after the badging rules have changed.
+  # We need this we precalculate and store percentages in the database;
+  # this speeds up many actions, but it means that a change in the rules
+  # doesn't automatically change the precalculated values.
+  # rubocop:disable Metrics/MethodLength
+  def self.update_all_badge_percentages
+    Project.find_each do |project|
+      project.with_lock do
+        old_badge_percentages =
+          Criteria.keys.map do |level|
+            [level, project["badge_percentage_#{level}".to_sym]]
+          end.to_h
+        project.update_badge_percentages
+        old_badge_percentages.each do |level, percentage|
+          unless percentage ==
+                 project["badge_percentage_#{level}".to_sym]
+            project.save!(touch: false)
+          end
+        end
+      end
+    end
+  end
+  # rubocop:enable Metrics/MethodLength
 
   # The following configuration options are trusted.  Set them to
   # reasonable numbers or accept the defaults.
@@ -227,7 +368,7 @@ class Project < ActiveRecord::Base
     #   Use: projects.order("COALESCE(last_reminder_at, updated_at)")
     Project
       .select('projects.*, users.email as user_email')
-      .where('badge_percentage < 100')
+      .where('badge_percentage_0 < 100')
       .where('lost_passing_at IS NULL OR lost_passing_at < ?',
              LOST_PASSING_REMINDER.days.ago)
       .where('disabled_reminders = FALSE')
@@ -244,20 +385,79 @@ class Project < ActiveRecord::Base
   end
   # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
-  # Return owning user's name for purposes of display.
-  def user_display_name
-    user_name || user_nickname
+  # Return which projects should be announced as getting badges in the
+  # month target_month
+  def self.projects_first_passing_in(target_month)
+    Project
+      .select('id, name, achieved_passing_at')
+      .where('badge_percentage_0 = 100')
+      .where('achieved_passing_at >= ?', target_month.at_beginning_of_month)
+      .where('achieved_passing_at <= ?', target_month.at_end_of_month)
+      .where('lost_passing_at IS NULL')
+      .reorder('achieved_passing_at')
   end
 
-  # Send owner an email they add a new project.
-  def send_new_project_email
-    ReportMailer.email_new_project_owner(self).deliver_now
+  def self.recently_reminded
+    Project
+      .select('projects.*, users.email as user_email')
+      .joins(:user).references(:user) # Need this to check email address
+      .where('last_reminder_at IS NOT NULL')
+      .where('last_reminder_at >= ?', 14.days.ago)
+      .reorder('last_reminder_at')
   end
 
   private
 
-  def all_active_criteria_passing?
-    Criteria.active.all? { |criterion| passing? criterion }
+  # def all_active_criteria_passing?
+  #   Criteria.active.all? { |criterion| enough? criterion }
+  # end
+
+  # This method is mirrored in assets/project-form.js as isEnough
+  # If you change this method, change isEnough accordingly.
+  def enough?(criterion)
+    result = get_criterion_result(criterion)
+    result == :criterion_passing || result == :criterion_barely
+  end
+
+  # This method is mirrored in assets/project-form.js as getColor
+  # If you change this method, change getColor accordingly.
+  def get_color(value)
+    hue = (value * 120).round
+    "hsl(#{hue}, 100%, 50%)"
+  end
+
+  # This method is mirrored in assets/project-form.js as getMetResult
+  # If you change this method, change getMetResult accordingly.
+  def get_met_result(criterion, justification)
+    return :criterion_url_required if criterion.met_url_required? &&
+                                      !contains_url?(justification)
+    return :criterion_justification_required if
+      criterion.met_justification_required? &&
+      !justification_good?(justification)
+    :criterion_passing
+  end
+
+  # This method is mirrored in assets/project-form.js as getNAResult
+  # If you change this method, change getNAResult accordingly.
+  def get_na_result(criterion, justification)
+    return :criterion_justification_required if
+      criterion.na_justification_required? &&
+      !justification_good?(justification)
+    :criterion_passing
+  end
+
+  # This method is mirrored in assets/project-form.js as getUnmetResult
+  # If you change this method, change getUnmetResult accordingly.
+  def get_unmet_result(criterion, justification)
+    return :criterion_barely if criterion.suggested? || (criterion.should? &&
+                               justification_good?(justification))
+    return :criterion_justification_required if criterion.should?
+    :criterion_failing
+  end
+
+  def justification_good?(justification)
+    return false if justification.nil?
+    justification.length >= MIN_SHOULD_LENGTH
   end
 
   def need_a_base_url
@@ -265,22 +465,13 @@ class Project < ActiveRecord::Base
     errors.add :base, 'Need at least a home page or repository URL'
   end
 
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity
-  # rubocop:disable Metrics/PerceivedComplexity
-  def passing?(criterion)
-    status = self[criterion.name.status]
-    justification = self[criterion.name.justification]
-
-    return true if status.na?
-    return true if status.met? && !criterion.met_url_required?
-    return true if status.met? && contains_url?(justification)
-    return true if criterion.should? && status.unmet? &&
-                   justification.length >= MIN_SHOULD_LENGTH
-    return true if criterion.suggested? && !status.unknown?
-    false
+  def update_passing_times(old_badge_percentage)
+    if badge_percentage_0 == 100 && old_badge_percentage < 100
+      self.achieved_passing_at = Time.now.utc
+    elsif badge_percentage_0 < 100 && old_badge_percentage == 100
+      self.lost_passing_at = Time.now.utc
+    end
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity
-  # rubocop:enable Metrics/PerceivedComplexity
 
   def to_percentage(portion, total)
     return 0 if portion.zero?

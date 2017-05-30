@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require 'test_helper'
 
 class AdminUsersShowTest < ActionDispatch::IntegrationTest
@@ -9,7 +10,7 @@ class AdminUsersShowTest < ActionDispatch::IntegrationTest
   end
 
   test 'non-logged-in show user' do
-    get user_path(@melissa)
+    get user_path(@melissa, locale: nil)
     assert_response :success
     assert_select 'a[href=?]'.dup, 'mailto:melissa%40example.com', false
   end
